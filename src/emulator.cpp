@@ -1,4 +1,10 @@
+#include <cstdlib>
+
 #include "emulator.h"
+#include "options.h"
+#include "i8080.h"
+
+using namespace i8080cpu;
 
 static void kick_timer()
 {
@@ -23,6 +29,82 @@ Emulator::~Emulator()
     }
 }
 
+void Emulator::dump_state_now()
+{
+    // Снимок для разбора зависаний: где стоит процессор и какой стек. Пишем
+    // рядом с логом, чтобы можно было прислать одним файлом.
+    const char * path = getenv("V06X_STATE_FILE");
+    FILE * f = fopen(path ? path : "v06x-state.txt", "a");
+    if (!f) return;
+    Memory & mem = board.get_memory();
+    int pc = i8080_pc(), sp = i8080_regs_sp();
+    fprintf(f, "PC=%04X SP=%04X A=%02X BC=%04X DE=%04X HL=%04X port10=%02X\n",
+            pc, sp, i8080_regs_a(), i8080_regs_bc(), i8080_regs_de(),
+            i8080_regs_hl(), mem.get_last_control());
+    fprintf(f, "  прерывания: %s\n", i8080_iff() ? "разрешены" : "ЗАПРЕЩЕНЫ");
+    fprintf(f, "  код у PC:");
+    for (int i = 0; i < 12; ++i) fprintf(f, " %02X", mem.get_byte(pc + i, false));
+    fprintf(f, "\n  стек:");
+    for (int i = 0; i < 8; ++i)
+        fprintf(f, " %04X", mem.get_byte(sp + i * 2, true) |
+                            (mem.get_byte(sp + i * 2 + 1, true) << 8));
+    fprintf(f, "\n");
+    // переменные CO: буквы дисков панелей и его рабочая область
+    static const struct { int at, len; const char * what; } areas[] = {
+        {0x0000, 16, "нулевая страница"},
+        {0x3E8D, 16, "индикатор и буквы панелей"},
+        {0xA830, 32, "переменные CO A830"},
+        {0xA860, 48, "переменные CO A860"},
+    };
+    for (auto & a : areas) {
+        fprintf(f, "  %04X %s:", a.at, a.what);
+        for (int i = 0; i < a.len; ++i)
+            fprintf(f, " %02X", mem.get_byte(a.at + i, false));
+        fprintf(f, "\n");
+    }
+    fclose(f);
+    extern void trace_dump_ring(const char * path);
+    const char * ring = getenv("V06X_TRACE_RING_FILE");
+    trace_dump_ring(ring ? ring : "v06x-trace-ring.txt");
+    fprintf(stderr, "состояние записано в %s\n", path ? path : "v06x-state.txt");
+}
+
+void Emulator::dump_ram_now()
+{
+    // Снимок памяти, какой её видит процессор, -- 64 КБ в файл из V06X_RAM_SAVE.
+    // Нужен проверкам: по нему видно, цел ли дописанный в CO код к концу
+    // прогона. Следом за стеком по следу обращений не уследишь -- стековые
+    // обращения в него не пишутся, их слишком много.
+    const char * path = getenv("V06X_RAM_SAVE");
+    if (!path) return;
+    FILE * f = fopen(path, "wb");
+    if (!f) return;
+    Memory & mem = board.get_memory();
+    for (int a = 0; a <= 0xFFFF; ++a) fputc(mem.get_byte(a, false), f);
+    fclose(f);
+}
+
+void Emulator::save_edd_now()
+{
+    if (Options.eddfile.size() == 0) {
+        fprintf(stderr, "квазидиск не подключён -- сохранять нечего\n");
+        return;
+    }
+    const char * env = getenv("V06X_EDD_SAVE");
+    std::string path = env ? std::string(env) : Options.eddfile[0] + ".saved";
+    // подложить исходный образ мы не вправе, поэтому по умолчанию пишем рядом
+    board.get_memory().save_edd(path.c_str(), 0x10000, 0x40000);
+    fprintf(stderr, "квазидиск сохранён в %s\n", path.c_str());
+
+    if (Options.eddfile.size() > 1) {
+        const char * env2 = getenv("V06X_EDD_SAVE2");
+        std::string path2 = env2 ? std::string(env2)
+                                 : Options.eddfile[1] + ".saved";
+        board.get_memory().save_edd(path2.c_str(), 0x50000, 0x40000);
+        fprintf(stderr, "второй квазидиск сохранён в %s\n", path2.c_str());
+    }
+}
+
 bool Emulator::handle_keyboard_event(SDL_KeyboardEvent & event)
 {
     switch (event.keysym.scancode) 
@@ -36,6 +118,20 @@ bool Emulator::handle_keyboard_event(SDL_KeyboardEvent & event)
                     board.toggle_fullscreen();
                     return true;
                 }
+            break;
+        case SDL_SCANCODE_D:
+            if (event.keysym.mod & (KMOD_GUI | KMOD_ALT)) {
+                dump_state_now();
+                return true;
+            }
+            break;
+        case SDL_SCANCODE_S:
+            // выгрузить текущий квазидиск: сам эмулятор его нигде не сохраняет,
+            // а без этого всё, что записано на диск C:, теряется при выходе
+            if (event.keysym.mod & (KMOD_GUI | KMOD_ALT)) {
+                save_edd_now();
+                return true;
+            }
             break;
         default:
             break;
@@ -120,6 +216,7 @@ void Emulator::handle_render(threadevent & event, bool & stopping)
         }
         DBG_QUEUE(putchar('R'); fflush(stdout););
         if (Options.max_frame >= 0 && frame_no >= Options.max_frame) {
+            dump_ram_now();
             ui_to_engine_queue.push(threadevent(QUIT, 0));
             stopping = true;
         }

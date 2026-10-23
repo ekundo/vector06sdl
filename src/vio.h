@@ -1,4 +1,5 @@
 #pragma once
+#include <stdlib.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 #include "8253.h"
 #include "ay.h"
 #include "fd1793.h"
+#include "hdd.h"
 #include "wav.h"
 
 #include "serialize.h"
@@ -38,6 +40,10 @@ public:
 
     std::function<int(uint32_t,uint8_t)> onread;
     std::function<void(uint32_t,uint8_t)> onwrite;
+
+    // НЖМД: регистры ATA на портах 50h..58h. Без образа молчит, и система
+    // решает, что винчестера нет, -- ровно как было до него.
+    Hdd hdd;
 
 public:
     IO(Memory & _memory, Keyboard & _keyboard, I8253 & _timer, FD1793 & _fdc, 
@@ -107,6 +113,12 @@ public:
                 break;
             case 0x05:
                 result = this->PC2;
+                // V06X_LPT=1 -- сказать программе, что принтер готов. Разряд 0
+                // порта 05 -- это «занят»: CO крутится в 30B4, пока он взведён
+                // (IN 05h / ANI 01h / JNZ -- ждать), и печатает, когда снят.
+                // Готовность -- это СНЯТЫЙ разряд, а не взведённый; пока было
+                // наоборот, печать не доходила до конца ни в одном сценарии.
+                if (getenv("V06X_LPT")) result &= ~1;
                 break;
             case 0x06:
                 result = this->PB2;
@@ -147,6 +159,12 @@ public:
                 break;
             case 0x1c: // fdc control - readonly
                 //result = this->fdc.read(4);
+                break;
+
+            case 0x50: case 0x51: case 0x52: case 0x53:  // НЖМД: регистры ATA
+            case 0x54: case 0x55: case 0x56: case 0x57:
+            case 0x58:                                   // ... и старший байт
+                result = this->hdd.read(port - 0x50);
                 break;
             default:
                 break;
@@ -271,6 +289,10 @@ public:
                 // kvas 
                 this->kvaz.control_write(w8);
                 break;
+            case 0x11:
+                // второй квазидиск; без второго --edd платы нет и порт молчит
+                this->kvaz.control_write2(w8);
+                break;
             case 0x14:
             case 0x15:
                 this->ay.write(port & 1, w8);
@@ -290,6 +312,12 @@ public:
                 break;
             case 0x1c: // fdc control
                 this->fdc.write(4, w8);
+                break;
+
+            case 0x50: case 0x51: case 0x52: case 0x53:  // НЖМД: регистры ATA
+            case 0x54: case 0x55: case 0x56: case 0x57:
+            case 0x58:                                   // ... и старший байт
+                this->hdd.write(port - 0x50, w8);
                 break;
             default:
                 break;

@@ -67,7 +67,7 @@ private:
 class Session : public std::enable_shared_from_this<Session>
 {
 public:
-    Session(boost::asio::io_service& ios, Board & board)
+    Session(boost::asio::io_context& ios, Board & board)
         : socket(ios), board(board), closing(false) {}
 
     tcp::socket& get_socket()
@@ -352,7 +352,7 @@ private:
 
 class Server {
 public:
-    Server(boost::asio::io_service& ios, short port, Board & board) 
+    Server(boost::asio::io_context& ios, short port, Board & board) 
         : ios(ios), acceptor(ios, tcp::endpoint(tcp::v4(), port)), board(board)
     {
         std::shared_ptr<Session> session = std::make_shared<Session>(ios, board);
@@ -379,12 +379,12 @@ public:
     }
 
 private:
-    boost::asio::io_service& ios;
+    boost::asio::io_context& ios;
     tcp::acceptor acceptor;
     Board & board;
 };
 
-boost::asio::io_service iosrv;
+boost::asio::io_context iosrv;
 Server * srv;
 
 void start_gdb_server(Board & board)

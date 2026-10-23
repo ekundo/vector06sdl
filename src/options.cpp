@@ -20,6 +20,7 @@ _options Options =
     .pc = 0,
     .wavfile = "",
     .eddfile = {},
+    .hddfile = "",
     .max_frame = -1,
     .vsync = false,
 #if defined(__ANDROID__) || defined(__GODOT__)
@@ -66,7 +67,8 @@ void options(int argc, char ** argv)
         ("pc", po::value<std::string>(), "initial pc (default 0)")
         ("wav", po::value<std::string>(), "wav file to load (not implemented)")
         ("fdd", po::value<std::vector<std::string>>(), "fdd floppy image (multiple up to 4)")
-        ("edd", po::value<std::vector<std::string>>(), "edd ramdisk image (multiple up to 16)")
+        ("edd", po::value<std::vector<std::string>>(), "edd ramdisk image (up to 2: ports 10h and 11h)")
+        ("hdd", po::value<std::string>(), "hard disk image (ATA registers at ports 50h..58h)")
         ("log", po::value<std::string>(), "fdc,audio,video print debug info from systems")
         ("autostart", "autostart based on RUS/LAT blinkage")
         ("max-frame", po::value<int>(), "run emulation for this many frames then exit")
@@ -175,12 +177,17 @@ void options(int argc, char ** argv)
             }
         }
 
+        // Образ НЖМД открывается на запись -- прогон работает по копии.
+        if (vm.count("hdd")) {
+            Options.hddfile = vm["hdd"].as<std::string>();
+        }
+
         if (vm.count("edd")) {
             Options.eddfile = vm["edd"].as<std::vector<std::string>>();
-            if (Options.eddfile.size() > 1) {
-                printf("Warning: only 1 kvaz is currently supported."
-                        " Stay tuned for more.\n");
-                Options.eddfile.resize(1);
+            if (Options.eddfile.size() > 2) {
+                printf("Warning: only 2 kvazes are supported (ports 10h, 11h)."
+                        " Truncated.\n");
+                Options.eddfile.resize(2);
             }
         }
 

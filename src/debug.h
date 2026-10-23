@@ -89,7 +89,8 @@ class Debug
 
     static const constexpr size_t MEM_BANK_SIZE = 0x10000;
     static const constexpr size_t RAM_SIZE = MEM_BANK_SIZE;
-    static const constexpr size_t RAM_DISK_SIZE = MEM_BANK_SIZE * 4;
+    // два квазидиска по 4 страницы: адреса доходят до 0x8FFFF
+    static const constexpr size_t RAM_DISK_SIZE = MEM_BANK_SIZE * 8;
     static const constexpr size_t GLOBAL_MEM_SIZE = RAM_SIZE + RAM_DISK_SIZE;
     static const constexpr size_t TRACE_LOG_SIZE = 100000;
 

@@ -34,6 +34,20 @@ void load_edd(Memory & memory)
     }
 }
 
+static void save_edd_at_exit(Memory & memory)
+{
+    const char * path = getenv("V06X_EDD_SAVE");
+    if (path && Options.eddfile.size()) {
+        memory.save_edd(path, 0x10000, 0x40000);
+        fprintf(stderr, "квазидиск сохранён в %s\n", path);
+    }
+    const char * path2 = getenv("V06X_EDD_SAVE2");
+    if (path2 && Options.eddfile.size() > 1) {
+        memory.save_edd(path2, 0x50000, 0x40000);
+        fprintf(stderr, "второй квазидиск сохранён в %s\n", path2);
+    }
+}
+
 void load_rom(Memory & memory)
 {
     memory.init_from_vector(util::load_binfile(Options.romfile), 
@@ -222,6 +236,7 @@ int main(int argc, char ** argv)
 
     board.reset(Board::ResetMode::BLKVVOD);
 
+    memory.enable_kvaz2(Options.eddfile.size() > 1);
     if (Options.eddfile.size() != 0) {
         load_edd(memory);
     }
@@ -238,6 +253,12 @@ int main(int argc, char ** argv)
     //if (!Options.nofdc) {
         load_disks(fdc);
     //}
+
+    // Образ НЖМД: без него порты 50h..58h молчат и система решает, что
+    // винчестера нет. Открывается на запись -- прогон делается по копии.
+    if (Options.hddfile.length() != 0 && !io.hdd.attach(Options.hddfile)) {
+        printf("Warning: error opening hdd image %s\n", Options.hddfile.c_str());
+    }
 
     atexit(SDL_Quit);
 
@@ -263,6 +284,8 @@ int main(int argc, char ** argv)
         ProfilerStop();
     }
 #endif
+    save_edd_at_exit(memory);
+
 
     return 0;
 }

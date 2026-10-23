@@ -11,6 +11,7 @@ struct _options
     int pc;
     std::string wavfile;
     std::vector<std::string> eddfile;
+    std::string hddfile;        // образ НЖМД: порты 50h..58h
     int max_frame;
     bool vsync;
     bool novideo;

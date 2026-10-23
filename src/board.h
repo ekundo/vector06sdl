@@ -68,6 +68,8 @@ class Board
     std::vector<Watchpoint> io_watchpoints;
 
   public:
+    Memory & get_memory() { return memory; }   // чтобы выгрузить квазидиск на лету
+
     std::function<void(void)> poll_debugger;
     std::function<void(void)> onbreakpoint = nullptr;
     std::function<void(void)> onframetimer;

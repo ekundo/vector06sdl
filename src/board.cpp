@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <vector>
+#include <string>
 #include <functional>
 #include <algorithm>
 #include "i8080.h"
@@ -15,6 +16,109 @@ extern "C" unsigned char* boots_bin;
 extern "C" unsigned int boots_bin_len;
 
 using namespace i8080cpu;
+
+// PC-range trace, enabled with V06X_TRACE_LO / V06X_TRACE_HI / V06X_TRACE_FILE.
+// Scripted breakpoints cannot do this job: script_attached() raises
+// script_interrupt and execute_frame() then returns before reaching the
+// instruction loop, so the machine stops instead of tracing.
+static FILE* trace_file = nullptr;
+static int trace_lo = 0;
+static int trace_hi = -1;
+static int trace_last_pc = -1;
+// Optional gate: tracing only runs between V06X_TRACE_ARM and V06X_TRACE_DISARM,
+// so a single OS call can be isolated instead of the whole run. Each arming
+// bumps a window counter that is printed with every line.
+static int trace_arm = -1;
+static int trace_disarm = -1;
+static bool trace_armed = true;
+static int trace_window = 0;
+extern int hal_last_bank;   // last value written to port 10h -- which memory is visible at A000-DFFF
+// V06X_TRACE_ALL logs every instruction in the range instead of only the first
+// of a run -- needed to diff two runs instruction by instruction.
+// V06X_TRACE_MAX caps the number of logged lines so the file stays usable.
+static bool trace_all = false;
+static long trace_max = 0;
+static long trace_count = 0;
+
+// Execution coverage bitmap, enabled with V06X_COV_LO / V06X_COV_HI /
+// V06X_COV_FILE. Every executed PC in the range is marked, so the dump is an
+// exact set of instruction starts -- which static disassembly of a program full
+// of jump tables cannot give.
+static unsigned char* cov = nullptr;
+static int cov_lo = 0;
+static int cov_hi = -1;
+static const char* cov_path = nullptr;
+
+static void cov_dump()
+{
+    if (!cov || !cov_path) return;
+    FILE* f = fopen(cov_path, "wb");
+    if (!f) return;
+    fwrite(cov, 1, (size_t)(cov_hi - cov_lo + 1), f);
+    fclose(f);
+}
+
+static void cov_init()
+{
+    const char* lo = getenv("V06X_COV_LO");
+    const char* hi = getenv("V06X_COV_HI");
+    cov_path = getenv("V06X_COV_FILE");
+    if (!lo || !hi || !cov_path) return;
+    cov_lo = (int)strtol(lo, nullptr, 0);
+    cov_hi = (int)strtol(hi, nullptr, 0);
+    if (cov_hi < cov_lo) return;
+    cov = (unsigned char*)calloc((size_t)(cov_hi - cov_lo + 1), 1);
+    atexit(cov_dump);
+}
+
+// Кольцевой буфер трассы: держим в памяти последние V06X_TRACE_RING строк и
+// сбрасываем их по требованию. Нужно, когда интересен КОНЕЦ прогона, а не
+// начало: обычная трасса упирается в лимит задолго до отказа.
+static std::vector<std::string> trace_ring;
+static size_t trace_ring_pos = 0;
+
+void trace_dump_ring(const char * path)
+{
+    if (trace_ring.empty()) return;
+    FILE * f = fopen(path, "w");
+    if (!f) return;
+    for (size_t i = 0; i < trace_ring.size(); ++i) {
+        const std::string & s = trace_ring[(trace_ring_pos + i) % trace_ring.size()];
+        if (!s.empty()) fputs(s.c_str(), f);
+    }
+    fclose(f);
+    fprintf(stderr, "трасса (последние %zu шагов) в %s\n", trace_ring.size(), path);
+}
+
+static void trace_init()
+{
+    cov_init();
+    const char* lo = getenv("V06X_TRACE_LO");
+    const char* hi = getenv("V06X_TRACE_HI");
+    const char* path = getenv("V06X_TRACE_FILE");
+    if (!lo || !hi || !path) return;
+    trace_lo = (int)strtol(lo, nullptr, 0);
+    trace_hi = (int)strtol(hi, nullptr, 0);
+    const char* arm = getenv("V06X_TRACE_ARM");
+    const char* dis = getenv("V06X_TRACE_DISARM");
+    if (arm && dis) {
+        trace_arm = (int)strtol(arm, nullptr, 0);
+        trace_disarm = (int)strtol(dis, nullptr, 0);
+        trace_armed = false;
+    }
+    trace_all = getenv("V06X_TRACE_ALL") != nullptr;
+    const char* mx = getenv("V06X_TRACE_MAX");
+    trace_max = mx ? strtol(mx, nullptr, 0) : 0;
+    const char* ring = getenv("V06X_TRACE_RING");
+    if (ring) {
+        size_t n = (size_t)strtol(ring, nullptr, 0);
+        if (n) trace_ring.assign(n, std::string());
+    }
+    trace_file = fopen(path, "w");
+    fprintf(stderr, "pc-trace: %04x..%04x -> %s (%s)\n", trace_lo, trace_hi,
+            path, trace_file ? "open" : "FAILED");
+    atexit([]{ if (trace_file) fclose(trace_file); });
+}
 
 Board::Board(Memory& _memory, IO& _io, PixelFiller& _filler, Soundnik& _snd,
   TV& _tv, WavPlayer& _tape_player, Debug& _debug)
@@ -35,6 +139,7 @@ Board::Board(Memory& _memory, IO& _io, PixelFiller& _filler, Soundnik& _snd,
 
 void Board::init()
 {
+    trace_init();
     i8080_hal_bind(memory, io, *this);
     cadence::set_cadence(
       this->tv.get_refresh_rate(), cadence_frames, cadence_length);
@@ -147,6 +252,64 @@ int Board::execute_frame(bool update_screen)
         this->filler.irq = false;
         // DBG_FRM(F1,F2,printf("%05d %04x: ", this->between + this->instr_time,
         // i8080_pc()));
+        if (cov) {
+            int pc = i8080_pc();
+            if (pc >= cov_lo && pc <= cov_hi) cov[pc - cov_lo] = 1;
+        }
+
+        if (trace_file) {
+            int pc = i8080_pc();
+            if (trace_arm >= 0) {
+                if (pc == trace_arm) { trace_armed = true; ++trace_window; }
+                else if (pc == trace_disarm) trace_armed = false;
+            }
+            if (!trace_armed) { /* gated off */ }
+            else if (pc < trace_lo || pc > trace_hi) {
+                // leaving the window re-arms the filter, so every *entry* into
+                // the range is logged even when the same address is re-entered
+                trace_last_pc = -1;
+            }
+            else if (trace_all || pc != trace_last_pc) {
+                trace_last_pc = pc;
+                if (!trace_ring.empty()) {
+                    char buf[512];
+                    int sp2 = i8080_regs_sp();
+                    snprintf(buf, sizeof buf,
+                      "w%d %04x bank=%02x sp=%04x a=%02x bc=%04x de=%04x hl=%04x "
+                      "bytes=%02x %02x %02x\n",
+                      trace_window, pc, hal_last_bank & 0xFF, sp2, i8080_regs_a(),
+                      i8080_regs_bc(), i8080_regs_de(), i8080_regs_hl(),
+                      this->memory.read(pc, false), this->memory.read(pc + 1, false),
+                      this->memory.read(pc + 2, false));
+                    trace_ring[trace_ring_pos] = buf;
+                    trace_ring_pos = (trace_ring_pos + 1) % trace_ring.size();
+                } else {
+                if (trace_max && ++trace_count > trace_max) {
+                    fclose(trace_file);
+                    trace_file = nullptr;
+                }
+                if (!trace_file) break;
+                int sp = i8080_regs_sp();
+                fprintf(trace_file,
+                  "w%d %04x bank=%02x sp=%04x a=%02x bc=%04x de=%04x hl=%04x ret=%04x "
+                  "bytes=%02x %02x %02x stack=%04x,%04x,%04x,%04x,%04x,%04x\n",
+                  trace_window, pc, hal_last_bank & 0xFF, sp, i8080_regs_a(),
+                  i8080_regs_bc(), i8080_regs_de(), i8080_regs_hl(),
+                  this->memory.read(sp, true) |
+                    (this->memory.read(sp + 1, true) << 8),
+                  this->memory.read(pc, false),
+                  this->memory.read(pc + 1, false),
+                  this->memory.read(pc + 2, false),
+                  this->memory.read(sp + 2, true) | (this->memory.read(sp + 3, true) << 8),
+                  this->memory.read(sp + 4, true) | (this->memory.read(sp + 5, true) << 8),
+                  this->memory.read(sp + 6, true) | (this->memory.read(sp + 7, true) << 8),
+                  this->memory.read(sp + 8, true) | (this->memory.read(sp + 9, true) << 8),
+                  this->memory.read(sp + 10, true) | (this->memory.read(sp + 11, true) << 8),
+                  this->memory.read(sp + 12, true) | (this->memory.read(sp + 13, true) << 8));
+                }
+            }
+        }
+
         // script hook
         if (this->scripting && check_breakpoint()) {
             this->script_interrupt = true;

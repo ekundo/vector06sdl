@@ -101,7 +101,9 @@ public:
         switch (this->mode_int) {
             case 0: // Interrupt on terminal count
                 if (this->load) {
-                    this->value = this->loadvalue;
+                    // count 0 means 65536 (10000 in BCD): with 0 the first step hit terminal count at once
+                    // and returned -value+1 = 2, a click on every reload
+                    this->value = this->loadvalue == 0 ? (this->bcd ? 10000 : 0x10000) : this->loadvalue;
                     this->enabled = true;
                     this->armed = true;
                     this->out = 0; 
@@ -173,6 +175,26 @@ public:
                 result = this->out;
                 break;
             case 4: // Software triggered strobe
+                // out stays high; one clock low at terminal count after each load, then the counter keeps
+                // counting (wraps) without new strobes until the next load
+                if (this->load) {
+                    this->value = this->loadvalue == 0 ? (this->bcd ? 10000 : 0x10000) : this->loadvalue;
+                    this->enabled = true;
+                    this->armed = true;
+                    this->out = 1;
+                }
+                if (this->enabled) {
+                    this->out = 1;
+                    this->value -= cycles;
+                    if (this->value <= 0) {
+                        if (this->armed) {
+                            this->out = 0;
+                            this->armed = false;
+                        }
+                        this->value += this->bcd ? 10000 : 65536;
+                    }
+                }
+                result = this->out;
                 break;
             case 5: // Hardware triggered strobe
                 break;
@@ -319,7 +341,7 @@ public:
     void write_cw(uint8_t w8) 
     {
         unsigned counter_set = (w8 >> 6) & 3;
-        int mode_set = (w8 >> 1) & 3;
+        int mode_set = (w8 >> 1) & 7;            // M2 M1 M0; modes 6, 7 = 2, 3 (SetMode folds them)
         int latch_set = (w8 >> 4) & 3;
         int bcd_set = (w8 & 1);
 

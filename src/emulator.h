@@ -79,6 +79,9 @@ private:
     void handle_render(threadevent & event, bool & stopping);
     void join_emulator_thread();
     bool handle_keyboard_event(SDL_KeyboardEvent & event);
+    void dump_ram_now();
+    void save_edd_now();
+    void dump_state_now();
     int wait_event(SDL_Event * event, threadevent & ev, int timeout);
 
     void refresh_joysticks();

@@ -1,7 +1,9 @@
 #include <inttypes.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <vector>
+#include <algorithm>
 
 #include "memory.h"
 #include "i8080.h"
@@ -27,6 +29,7 @@ Memory::Memory() : mode_stack(false), mode_map(false), page_map(0),
 //       10       screen page
 void Memory::control_write(uint8_t w8)
 {
+    this->last_control = w8;
     this->mode_stack = (w8 & 0x10) != 0;
     this->mode_map = w8 & 0xe0;
 
@@ -37,25 +40,53 @@ void Memory::control_write(uint8_t w8)
     //        w8, this->mode_stack, this->mode_map, this->page_map, this->page_stack);
 }
 
+// Второй квазидиск: та же плата на порту 011h, страницы лежат следом за
+// первым. Если второй --edd не задан, платы нет: порт не дешифруется, запись в
+// него не делает ничего -- как на Векторе с одной платой.
+void Memory::control_write2(uint8_t w8)
+{
+    if (!this->kvaz2_present) return;
+
+    this->last_control2 = w8;
+    this->mode_stack2 = (w8 & 0x10) != 0;
+    this->mode_map2 = w8 & 0xe0;
+
+    this->page_map2 = ((w8 & 3) + 5) << 16;
+    this->page_stack2 = (((w8 & 0xc) >> 2) + 5) << 16;
+}
+
+// Окно и стек выбираются по одной плате за раз, стек имеет приоритет над окном:
+// у МикроДОС при обмене с D: стек смотрит во второй квазидиск, а окно
+// A000-DFFF остаётся за первым -- там лежит ОЗУ системы.
+static inline bool in_window(uint8_t mode_map, uint32_t addr)
+{
+    return ((mode_map & 0x20) && (addr >= 0xa000) && (addr <= 0xdfff))
+        || ((mode_map & 0x40) && (addr >= 0x8000) && (addr <= 0x9fff))
+        || ((mode_map & 0x80) && (addr >= 0xe000) && (addr <= 0xffff));
+}
+
 uint32_t Memory::bigram_select(uint32_t addr, bool stackrq) const
 {
-    if (!(this->mode_map || this->mode_stack)) {
-        return addr;
-    } else if (this->mode_stack && stackrq) {
+    if (this->mode_stack && stackrq) {
         return addr + this->page_stack;
-    } else if ((this->mode_map & 0x20) && (addr >= 0xa000) && (addr <= 0xdfff)) {
+    }
+    if (this->mode_stack2 && stackrq) {
+        return addr + this->page_stack2;
+    }
+    if (this->mode_map && in_window(this->mode_map, addr)) {
         return addr + this->page_map;
-    } else if ((this->mode_map & 0x40) && (addr >= 0x8000) && (addr <= 0x9fff)) {
-        return addr + this->page_map;
-    } else if ((this->mode_map & 0x80) && (addr >= 0xe000) && (addr <= 0xffff)) {
-        return addr + this->page_map;
+    }
+    if (this->mode_map2 && in_window(this->mode_map2, addr)) {
+        return addr + this->page_map2;
     }
     return addr;
 }
 
 uint32_t Memory::tobank(uint32_t a) const
 {
-    return (a & 0x78000) | ((a<<2)&0x7ffc) | ((a>>13)&3);
+    // старшие биты адреса проходят насквозь; их стало на один больше --
+    // со вторым квазидиском полный адрес доходит до 0x8FFFF
+    return (a & 0xf8000) | ((a<<2)&0x7ffc) | ((a>>13)&3);
 }
 
 uint8_t Memory::read(uint32_t addr, bool stackrq, const bool _is_opcode) const
@@ -100,6 +131,7 @@ uint8_t Memory::get_byte(uint32_t addr, bool stackrq) const
     return value;
 }
 
+
 void Memory::write(uint32_t addr, uint8_t w8, bool stackrq)
 {
     uint32_t bigaddr = this->bigram_select(addr & 0xffff, stackrq);
@@ -115,6 +147,18 @@ void Memory::write(uint32_t addr, uint8_t w8, bool stackrq)
     }
     
     if (debug_onwrite) debug_onwrite(bigaddr, w8);
+}
+
+void Memory::save_edd(const char * path, uint32_t start_addr, uint32_t size) const
+{
+    FILE * f = fopen(path, "wb");
+    if (!f) return;
+    // квазидиск хранится в bytes[] с перемешиванием адресов (tobank), поэтому
+    // выгружаем так же, как init_from_vector его укладывал -- иначе получится каша
+    std::vector<uint8_t> out(size);
+    this->export_bytes(out.data(), start_addr, size);
+    fwrite(out.data(), 1, size, f);
+    fclose(f);
 }
 
 void Memory::init_from_vector(const vector<uint8_t> & from, uint32_t start_addr)
@@ -160,6 +204,11 @@ void Memory::serialize(std::vector<uint8_t> &to) {
     tmp.push_back((uint8_t)mode_map);
     tmp.push_back((uint8_t)(page_map>>16));
     tmp.push_back((uint8_t)(page_stack>>16));
+    tmp.push_back((uint8_t)kvaz2_present);
+    tmp.push_back((uint8_t)mode_stack2);
+    tmp.push_back((uint8_t)mode_map2);
+    tmp.push_back((uint8_t)(page_map2>>16));
+    tmp.push_back((uint8_t)(page_stack2>>16));
     tmp.push_back(sizeof(this->bytes)/65536); // normally 1+4, but we could get many ramdisks later
     tmp.insert(std::end(tmp), this->bytes, this->bytes + sizeof(this->bytes));
     tmp.insert(std::end(tmp), std::begin(this->bootbytes), std::end(this->bootbytes));
@@ -174,6 +223,11 @@ void Memory::deserialize(std::vector<uint8_t>::iterator it, uint32_t size)
     this->mode_map = (uint8_t) *it++;
     this->page_map = ((uint32_t) *it++) << 16;
     this->page_stack = ((uint32_t) *it++) << 16;
+    this->kvaz2_present = (bool) *it++;
+    this->mode_stack2 = (bool) *it++;
+    this->mode_map2 = (uint8_t) *it++;
+    this->page_map2 = ((uint32_t) *it++) << 16;
+    this->page_stack2 = ((uint32_t) *it++) << 16;
     uint32_t stored_ramsize = 65536 * *it++;
     size_t nbytes = std::min(stored_ramsize, (uint32_t)sizeof(this->bytes));
     std::copy(it, it + nbytes, this->bytes);

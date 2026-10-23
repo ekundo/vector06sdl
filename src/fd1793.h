@@ -48,15 +48,21 @@ public:
 
     uint8_t get(int index) override
     {
-        if (index < 0 || index >= (int)size()) 
-            throw std::out_of_range("boundary error");
+        if (index < 0 || index >= (int)size()) {
+            fprintf(stderr, "FD1793: read outside image: %d of %d\n",
+                    index, (int)size());
+            return 0xE5;
+        }
         return _data[index]; 
     }
 
     void set(int index, uint8_t value) override
     {
-        if (index < 0 || index >= (int)size()) 
-            throw std::out_of_range("boundary error");
+        if (index < 0 || index >= (int)size()) {
+            fprintf(stderr, "FD1793: write outside image: %d of %d\n",
+                    index, (int)size());
+            return;
+        }
         _data[index] = value;
     }
 
@@ -84,15 +90,24 @@ public:
 
     uint8_t get(int index) override
     {
-        if (index < 0 || index >= (int)size()) 
-            throw std::out_of_range("boundary error");
+        // За краем образа настоящий дисковод отвечает ошибкой, а не падением.
+        // Брошенное отсюда исключение никто не ловит, и прогон обрывался
+        // целиком -- вместе со всем, что он успел намерить.
+        if (index < 0 || index >= (int)size()) {
+            fprintf(stderr, "FD1793: read outside image: %d of %d (%s)\n",
+                    index, (int)size(), filename.c_str());
+            return 0xE5;
+        }
         return _data[index]; 
     }
 
     void set(int index, uint8_t value) override
     {
-        if (index < 0 || index >= (int)size()) 
-            throw std::out_of_range("boundary error");
+        if (index < 0 || index >= (int)size()) {
+            fprintf(stderr, "FD1793: write outside image: %d of %d (%s)\n",
+                    index, (int)size(), filename.c_str());
+            return;
+        }
         bool changed = _data[index] != value;
         if (changed) {
             _data[index] = value;
