@@ -260,6 +260,15 @@ int main(int argc, char ** argv)
         printf("Warning: error opening hdd image %s\n", Options.hddfile.c_str());
     }
 
+    // ComboLite: ESP платы (src/combolite/) на портах 59h/5Ah, сеть -- хоста.
+    if (Options.combolite) {
+        io.combo.poll_us = Options.combolite_poll_us;
+        io.combo.trace = Options.combolite_trace;
+        io.combo.clock = []() -> size_t { return board.get_cycles(); };
+        io.enable_combolite();
+        board.hooks.device_frame = []() { io.combo.frame(board.get_frame_no()); };
+    }
+
     atexit(SDL_Quit);
 
     board.poll_debugger = [](void) {

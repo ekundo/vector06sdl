@@ -12,6 +12,9 @@ struct _options
     std::string wavfile;
     std::vector<std::string> eddfile;
     std::string hddfile;        // образ НЖМД: порты 50h..58h
+    bool combolite;             // плата ComboLite: канал к ESP на 59h/5Ah
+    int combolite_poll_us;      // период опроса канала ESP, мкс; 0 -- на каждом обращении
+    bool combolite_trace;       // раз в кадр: сколько байт ESP отдала «Вектору»
     int max_frame;
     bool vsync;
     bool novideo;

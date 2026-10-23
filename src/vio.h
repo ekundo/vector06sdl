@@ -9,6 +9,7 @@
 #include "ay.h"
 #include "fd1793.h"
 #include "hdd.h"
+#include "combolite.h"
 #include "wav.h"
 
 #include "serialize.h"
@@ -44,6 +45,16 @@ public:
     // НЖМД: регистры ATA на портах 50h..58h. Без образа молчит, и система
     // решает, что винчестера нет, -- ровно как было до него.
     Hdd hdd;
+
+    // ComboLite: канал к ESP на 59h/5Ah (combolite.h). Без --combolite молчит.
+    ComboLite combo;
+
+    void enable_combolite()
+    {
+        static Memory * mem;
+        mem = &this->kvaz;
+        combo.enable([]() -> uint8_t { return mem->get_last_control(); });
+    }
 
 public:
     IO(Memory & _memory, Keyboard & _keyboard, I8253 & _timer, FD1793 & _fdc, 
@@ -165,6 +176,9 @@ public:
             case 0x54: case 0x55: case 0x56: case 0x57:
             case 0x58:                                   // ... и старший байт
                 result = this->hdd.read(port - 0x50);
+                break;
+            case 0x59: case 0x5a:                        // ComboLite: канал к ESP
+                result = this->combo.in(port);
                 break;
             default:
                 break;
@@ -319,6 +333,9 @@ public:
             case 0x58:                                   // ... и старший байт
                 this->hdd.write(port - 0x50, w8);
                 break;
+            case 0x59: case 0x5a:                        // ComboLite: канал к ESP
+                this->combo.out(port, w8);
+                break;
             default:
                 break;
         }
@@ -346,6 +363,7 @@ public:
             int r = (w8 & 0x07);
 
             this->palette[index] = rgb2pixelformat(r,g,b);
+            this->combo.rawpal[index & 15] = (uint8_t)w8;     // TERM.COM вернёт её на выходе
             //printf("commit palette: %02x = %02x\n", index, this->palette[index]);
             this->palettebyte = -1;
         }

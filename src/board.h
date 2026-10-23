@@ -77,6 +77,7 @@ class Board
     struct
     {
         std::function<void(int)> frame;
+        std::function<void(void)> device_frame;   // устройства, которым нужен кадр (ComboLite)
         std::function<void(int)> jump;
     } hooks;
 
@@ -95,6 +96,7 @@ class Board
     void reset(Board::ResetMode
         blkvvod); // true: power-on reset, false: boot loaded prog
     int get_frame_no() const { return frame_no; }
+    size_t get_cycles() const { return total_v_cycles; }   // такты 3 МГц с пуска
     void handle_quit();
     bool terminating() const { return io.the_keyboard().terminate; };
     void interrupt(bool on);

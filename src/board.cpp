@@ -235,6 +235,8 @@ int Board::execute_frame(bool update_screen)
 {
     if (this->hooks.frame)
         this->hooks.frame(this->frame_no);
+    if (this->hooks.device_frame)
+        this->hooks.device_frame();
     if (this->poll_debugger)
         this->poll_debugger();
     if (this->debugger_interrupt || this->script_interrupt)

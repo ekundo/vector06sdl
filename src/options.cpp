@@ -21,6 +21,9 @@ _options Options =
     .wavfile = "",
     .eddfile = {},
     .hddfile = "",
+    .combolite = false,
+    .combolite_poll_us = 10000,
+    .combolite_trace = false,
     .max_frame = -1,
     .vsync = false,
 #if defined(__ANDROID__) || defined(__GODOT__)
@@ -69,6 +72,9 @@ void options(int argc, char ** argv)
         ("fdd", po::value<std::vector<std::string>>(), "fdd floppy image (multiple up to 4)")
         ("edd", po::value<std::vector<std::string>>(), "edd ramdisk image (up to 2: ports 10h and 11h)")
         ("hdd", po::value<std::string>(), "hard disk image (ATA registers at ports 50h..58h)")
+        ("combolite", "ComboLite board: settings channel, Wi-Fi modem and terminal at ports 59h/5Ah")
+        ("combolite-poll-us", po::value<int>(), "ComboLite: ESP polls the channel every N us of Vector time (default 10000, as on the board; 0 = on every port access)")
+        ("combolite-trace", "ComboLite: print bytes sent from the ESP to the Vector, per frame")
         ("log", po::value<std::string>(), "fdc,audio,video print debug info from systems")
         ("autostart", "autostart based on RUS/LAT blinkage")
         ("max-frame", po::value<int>(), "run emulation for this many frames then exit")
@@ -178,6 +184,10 @@ void options(int argc, char ** argv)
         }
 
         // Образ НЖМД открывается на запись -- прогон работает по копии.
+        Options.combolite = vm.count("combolite") > 0;
+        if (vm.count("combolite-poll-us"))
+            Options.combolite_poll_us = vm["combolite-poll-us"].as<int>();
+        Options.combolite_trace = vm.count("combolite-trace") > 0;
         if (vm.count("hdd")) {
             Options.hddfile = vm["hdd"].as<std::string>();
         }
