@@ -178,7 +178,8 @@ for f in ['boot/boot.c',
         '../../src/fsimage.cpp',
         '../../src/debug.cpp',
         '../../src/utils_string.cpp',
-        '../../src/scriptnik.cpp'
+        '../../src/scriptnik.cpp',
+        '../../src/combolite/*.c'
         ]:
     sources += Glob(f)
 

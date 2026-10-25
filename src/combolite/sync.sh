@@ -1,6 +1,6 @@
 #!/bin/sh
-# Взять код ESP платы ComboLite в эмулятор: канал «Вектор» <-> ESP, модем,
-# терминал и подбор цветов работают здесь те же, что на плате.
+# Взять код ESP платы ComboLite в эмулятор: канал «Вектор» <-> ESP и Wi-Fi
+# модем работают здесь те же, что на плате.
 #
 #   src/combolite/sync.sh ~/src/v06c-combolite/fw
 #
@@ -9,8 +9,8 @@
 set -e
 FW=${1:?путь к fw/ репозитория ComboLite}
 HERE=$(cd "$(dirname "$0")" && pwd)
-for f in vchan.c vchan.h term.c term.h modem.c modem.h vt.c vt.h \
-         palette.c palette.h vchan_sim.c board.h combo.h; do
+for f in vchan.c vchan.h modem.c modem.h bbslist.c bbslist.h \
+         inflate.c inflate.h fetch.h fetch_curl.c vchan_sim.c board.h combo.h; do
     cp "$FW/$f" "$HERE/$f"
 done
 git -C "$FW" log -1 --format='%H' > "$HERE/FW_VERSION" 2>/dev/null || true

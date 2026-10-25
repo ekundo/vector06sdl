@@ -209,6 +209,7 @@ void Emulator::handle_render(threadevent & event, bool & stopping)
         bool executed = event.data;
         DBG_QUEUE(putchar('r'); putchar('0' + executed););
         board.render_frame(frame_no, executed);
+        board.update_cursor();      /* the program may switch the mouse on/off */
         if ((Options.nosound && Options.novideo) || 
                 (Options.vsync && Options.vsync_enable)) {
             /* tests: kick-spin the event loop */
@@ -291,8 +292,15 @@ void Emulator::run_event_loop()
                 case SDL_KEYUP:
                     ui_to_engine_queue.push(threadevent(KEYUP, event.key));
                     break;
+                case SDL_MOUSEMOTION:
+                case SDL_MOUSEBUTTONDOWN:
+                case SDL_MOUSEBUTTONUP:
+                case SDL_MOUSEWHEEL:
+                    board.handle_mouse_event(event);
+                    break;
                 // this is to be handled in the ui thread
                 case SDL_WINDOWEVENT:
+                    board.handle_mouse_event(event);
                     //printf("windowevent: %x\n", event.window.event);
                     if (event.window.event == SDL_WINDOWEVENT_EXPOSED) {
                         if (kickstart) {

@@ -61,6 +61,8 @@ struct LoadKind
     };
 } LOADKIND;
 
+static void cmd_tap_frame();
+
 void install_ruslat_handler(v06x_user_data* v)
 {
     io.onruslat = [v](bool ruslat_new) {
@@ -108,6 +110,14 @@ godot_variant V06X_Init(godot_object* p_instance, void* p_method_data,
     };
 
     install_ruslat_handler(v);
+
+    // ComboLite: канал к ESP платы на 59h/5Ah (src/combolite.h) -- CL.COM,
+    // Wi-Fi модем и TERM.COM. Здесь всегда включена; ESP опрашивает канал
+    // раз в 0,5 мс, как прошивка платы, пока идут байты.
+    io.combo.poll_us = 500;
+    io.combo.clock = []() -> size_t { return board.get_cycles(); };
+    io.enable_combolite();
+    board.hooks.device_frame = []() { io.combo.frame(board.get_frame_no()); cmd_tap_frame(); };
 
     board.reset(Board::ResetMode::BLKVVOD);
     v->autostart_armed = Options.autostart;
@@ -245,14 +255,74 @@ godot_variant V06X_GetRusLat(godot_object* p_instance, void* p_method_data,
     return ret;
 }
 
+// SetMouse(tx, ty, buttons, wheel): pointer over the screen texture (576x288 texels),
+// buttons 1 left 2 right 4 middle, wheel steps. Outside the Vector picture only buttons/wheel count.
+godot_variant V06X_SetMouse(godot_object* p_instance, void* p_method_data,
+  void* p_user_data, int p_num_args, godot_variant** p_args)
+{
+    int tx = (int)api->godot_variant_as_int(p_args[0]);
+    int ty = (int)api->godot_variant_as_int(p_args[1]);
+    int buttons = (int)api->godot_variant_as_int(p_args[2]);
+    int wheel = (int)api->godot_variant_as_int(p_args[3]);
+    // texel column 0 = raster pixel center_offset, picture starts border_width later;
+    // texel row 0 = raster line 312 - yres, picture starts at line 22 + 18
+    int x512 = tx - Options.border_width;
+    int row = ty + (312 - Options.screen_height) - (22 + 18);
+    io.mouse.host_buttons(buttons);
+    if (wheel) io.mouse.host_wheel(wheel);
+    bool inside = x512 >= 0 && x512 < 512 && row >= 0 && row < 256;
+    if (inside) io.mouse.host_move(x512, 255 - row);
+
+    godot_variant ret;
+    api->godot_variant_new_bool(&ret, inside);
+    return ret;
+}
+
+// IsMouseEnabled(): the program has switched the KTSerg mouse on (port D4h)
+godot_variant V06X_IsMouseEnabled(godot_object* p_instance, void* p_method_data,
+  void* p_user_data, int p_num_args, godot_variant** p_args)
+{
+    godot_variant ret;
+    api->godot_variant_new_bool(&ret, io.mouse.is_enabled());
+    return ret;
+}
+
 // extern "C" JNIEXPORT void JNICALL
 // Java_com_svofski_v06x_cpp_Emulator_KeyDown(JNIEnv *env, jobject self, jint
 // scancode)
+/* Cmd на маке -- это РУС/ЛАТ (keyboard.h, SDL_SCANCODE_LGUI). Но Cmd нажимают и
+ * для Cmd+Tab, и «Вектор» видел нажатый РУС/ЛАТ: уход в другое окно
+ * переключал раскладку. Поэтому Cmd -- РУС/ЛАТ, только если его нажали и
+ * отпустили одного и окно не теряло фокус: тогда РУС/ЛАТ нажимается на
+ * cmd_tap кадров (короче «Вектор» мог бы не заметить). */
+static bool cmd_down, cmd_alone;
+static int  cmd_tap;
+
+static bool window_focused()
+{
+    static godot_object *os;
+    static godot_method_bind *mb;
+    bool r = true;
+    if (!os) os = api->godot_global_get_singleton((char *)"OS");
+    if (!mb) mb = api->godot_method_bind_get_method("_OS", "is_window_focused");
+    if (os && mb) api->godot_method_bind_ptrcall(mb, os, NULL, &r);
+    return r;
+}
+
+static void cmd_tap_frame()
+{
+    if (cmd_tap && --cmd_tap == 0) lator.keyup(SDL_SCANCODE_LGUI);
+}
+
 godot_variant V06X_KeyDown(godot_object* p_instance, void* p_method_data,
   void* p_user_data, int p_num_args, godot_variant** p_args)
 {
     godot_int scancode = api->godot_variant_as_int(p_args[0]);
-    lator.keydown((int)scancode);
+    if (scancode == SDL_SCANCODE_LGUI) { cmd_down = true; cmd_alone = true; }
+    else {
+        if (cmd_down) cmd_alone = false;    /* сочетание с Cmd -- не РУС/ЛАТ */
+        lator.keydown((int)scancode);
+    }
 
     godot_variant ret;
     api->godot_variant_new_bool(&ret, 1);
@@ -266,7 +336,13 @@ godot_variant V06X_KeyUp(godot_object* p_instance, void* p_method_data,
   void* p_user_data, int p_num_args, godot_variant** p_args)
 {
     godot_int scancode = api->godot_variant_as_int(p_args[0]);
-    lator.keyup((int)scancode);
+    if (scancode == SDL_SCANCODE_LGUI) {
+        if (cmd_down && cmd_alone && window_focused()) {
+            lator.keydown(SDL_SCANCODE_LGUI);
+            cmd_tap = 3;
+        }
+        cmd_down = false;
+    } else lator.keyup((int)scancode);
 
     godot_variant ret;
     api->godot_variant_new_bool(&ret, 1);

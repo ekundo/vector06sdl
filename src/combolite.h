@@ -1,6 +1,6 @@
-// combolite.h -- плата ComboLite в эмуляторе: канал «Вектор» <-> ESP на
-// портах 59h/5Ah и всё, что за ним в ESP: настройки (CL.COM), Wi-Fi модем
-// с telnet и терминал 80x25 (TERM.COM), подбор цветов.
+// combolite.h -- плата ComboLite в эмуляторе: Wi-Fi модем на портах 28h-2Dh
+// (подмножество UART 16550, doc/MODEM.md в репозитории платы) и
+// настройки платы для CL.COM в том же канале (кадры по AT*CL).
 //
 // Код ESP -- тот же, что на плате, копией в src/combolite/ (sync.sh). Вместо
 // ПЛИС и SPI -- модель канала из vchan_sim.c: две очереди по 14 байт, ESP
@@ -13,10 +13,10 @@
 // (--combolite-poll-us, по умолчанию 10000 -- тик FreeRTOS). Опрос делается
 // при обращении к порту канала или в начале кадра: между обращениями
 // «Вектор» канал не видит, так что пропущенные опросы ничего бы не изменили.
-// Время ESP (term.c, vchan.c, модем) -- те же такты в миллисекундах.
+// Время ESP (vchan.c, модем) -- те же такты в миллисекундах.
 // poll_us = 0 -- опрос на каждом обращении: ESP бесконечно быстрая.
 //
-// Палитра и регистр квазидиска 10h -- для ответа на TERM_OPEN: TERM.COM
+// Палитра и регистр квазидиска 10h -- для ответа на DIAG: TERM.COM
 // возвращает их на выходе. Палитру эмулятор хранит в цветах экрана, поэтому
 // сырые байты копятся здесь же, на записи (IO::commit_palette).
 #pragma once
@@ -66,12 +66,10 @@ public:
     {
         if (!on) return 0xff;
         sync();
-        if (port == 0x5a && !(sim_in(0x5a) & 1)) ++empty;
-        if (port == 0x59 && (sim_in(0x5a) & 1)) {
-            int b = sim_in(port);
+        if (port == 0x2d && !(sim_in(0x2d) & 1)) ++empty;
+        if (port == 0x28 && (sim_in(0x2d) & 1)) {
             ++to_vec;
-            if (trace) count(b);
-            return b;
+            return sim_in(port);
         }
         return sim_in(port);
     }
@@ -88,32 +86,15 @@ public:
         if (!on) return;
         sync();
         if (trace && to_vec) {
-            printf("combolite: frame %d: %u bytes ESP -> Vector, %u of them screen, %u polls, %u empty reads\n",
-                   frame_no, to_vec, screen, polls, empty);
+            printf("combolite: frame %d: %u bytes ESP -> Vector, %u polls, %u empty reads\n",
+                   frame_no, to_vec, polls, empty);
         }
-        to_vec = screen = polls = empty = 0;
+        to_vec = polls = empty = 0;
     }
 
 private:
-    size_t next = 0;
-    unsigned to_vec = 0, polls = 0, screen = 0, empty = 0;
-    int fr_pos = 0, fr_op = 0, fr_len = 0;     // разбор кадров к «Вектору» (fw/vchan.h)
-
-    // Байты разницы экрана в ответах TERM_IO (op 91h): data без статуса.
-    void count(int b)
-    {
-        switch (fr_pos) {
-        case 0: if (b == 0xA5) fr_pos = 1; return;
-        case 1: fr_pos = 2; return;                        // seq
-        case 2: fr_op = b; fr_pos = 3; return;
-        case 3: fr_len = b; fr_pos = 4; return;
-        default:
-            if (fr_pos - 4 < fr_len) {
-                if (fr_op == 0x91 && fr_pos > 4) ++screen;
-                ++fr_pos;
-            } else fr_pos = 0;                             // сумма
-        }
-    }
+    size_t next = 0, last = 0;
+    unsigned to_vec = 0, polls = 0, empty = 0;
 
     size_t now() const { return clock ? clock() : 0; }
 
@@ -121,6 +102,11 @@ private:
     {
         size_t t = now();
         if (poll_us <= 0 || !clock) { poll(t); return; }
+        // Сброс машины (Board::reset, БЛК+СБР загрузчика) обнуляет такты:
+        // часы пошли назад -- сетку опросов отсчитать заново, иначе ESP
+        // молчала бы, пока такты не догонят прежнюю отметку.
+        if (t < last) next = t;
+        last = t;
         if (t < next) return;
         size_t period = (size_t)poll_us * (CPU_HZ / 1000000);
         // опросы по сетке таймера ESP, а не от последнего обращения

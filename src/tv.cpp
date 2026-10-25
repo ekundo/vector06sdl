@@ -182,6 +182,8 @@ void TV::init_regular()
     this->texture_n = 0;
 
     SDL_RenderSetLogicalSize(this->renderer, window_width, window_height);
+    this->logical_width = window_width;     // SDL scales mouse events to this size
+    this->logical_height = window_height;
 
     icon_set(this->window);
 #endif
@@ -285,10 +287,41 @@ void TV::window_resized(SDL_Event & event)
 
         int ox = window_width/2 - ww/2;
         int oy = window_height/2 - wh/2;
+        this->gl_window_x = ox;
+        this->gl_window_y = oy;
         glViewport(ox, oy, ww, wh);
     }
 #endif
 }
+
+#if !defined(__ANDROID_NDK__) && !defined(__GODOT__)
+bool TV::window_to_picture(int mx, int my, int & x512, int & row) const
+{
+    int tx, ty;
+#if HAVE_OPENGL
+    if (Options.opengl) {
+        if (this->gl_window_width <= 0 || this->gl_window_height <= 0) return false;
+        tx = (mx - this->gl_window_x) * this->tex_width / this->gl_window_width;
+        ty = (my - this->gl_window_y) * this->tex_height / this->gl_window_height;
+    } else
+#endif
+    {
+        if (this->logical_width <= 0 || this->logical_height <= 0) return false;
+        tx = mx * this->tex_width / this->logical_width;
+        ty = my * this->tex_height / this->logical_height;
+    }
+    // texture column 0 = raster pixel center_offset, picture starts border_width later;
+    // texture row 0 = raster line 312 - yres, picture starts at line 22 + 18
+    x512 = tx - Options.border_width;
+    row = ty + (312 - Options.screen_height) - (22 + 18);
+    return x512 >= 0 && x512 < 512 && row >= 0 && row < 256;
+}
+
+void TV::show_cursor(bool show)
+{
+    SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE);
+}
+#endif
 
 void TV::handle_window_event(SDL_Event & event)
 {

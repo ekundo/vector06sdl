@@ -11,6 +11,7 @@
 #include "hdd.h"
 #include "combolite.h"
 #include "wav.h"
+#include "mouse.h"
 
 #include "serialize.h"
 
@@ -34,6 +35,8 @@ private:
     int outbyte;
     int palettebyte;
 public:
+    VectorMouse mouse;      // KTSerg mouse, port D4h
+
     std::function<void(int)> onborderchange;
     std::function<void(bool)> onmodechange;
     std::function<void(bool)> onruslat;
@@ -177,8 +180,12 @@ public:
             case 0x58:                                   // ... и старший байт
                 result = this->hdd.read(port - 0x50);
                 break;
-            case 0x59: case 0x5a:                        // ComboLite: канал к ESP
+            case 0x28: case 0x29: case 0x2a:             // ComboLite: модем, UART 16550
+            case 0x2b: case 0x2c: case 0x2d:
                 result = this->combo.in(port);
+                break;
+            case 0xd4:
+                result = this->mouse.read();
                 break;
             default:
                 break;
@@ -197,6 +204,11 @@ public:
     void output(int port, int w8) {
         if (this->onwrite) {
             this->onwrite((uint32_t)port, (uint8_t)w8);
+        }
+        if (port == 0xd4) {
+            // no raster timing for the mouse: the next IN must see the register
+            this->mouse.write(w8);
+            return;
         }
         this->outport = port;
         this->outbyte = w8;
@@ -333,7 +345,8 @@ public:
             case 0x58:                                   // ... и старший байт
                 this->hdd.write(port - 0x50, w8);
                 break;
-            case 0x59: case 0x5a:                        // ComboLite: канал к ESP
+            case 0x28: case 0x29: case 0x2a:             // ComboLite: модем, UART 16550
+            case 0x2b: case 0x2c: case 0x2d:
                 this->combo.out(port, w8);
                 break;
             default:

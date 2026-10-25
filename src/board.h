@@ -57,6 +57,9 @@ class Board
 
     std::vector<uint8_t> boot;
 
+    bool mouse_inside = false;
+    bool cursor_hidden = false;
+
     int debugging;
     int debugger_interrupt; // debugger interrupted
 
@@ -105,6 +108,10 @@ class Board
     void handle_keyup(SDL_KeyboardEvent& key);
     void handle_keydown(SDL_KeyboardEvent& key);
     void handle_window_event(SDL_Event& event);
+#if !defined(__ANDROID_NDK__) && !defined(__GODOT__)
+    void handle_mouse_event(SDL_Event& event);  /* ui thread */
+    void update_cursor();                       /* ui thread: hide host arrow while the program owns the mouse */
+#endif
     void set_joysticks(int joy_0e, int joy_0f);
 
     void toggle_fullscreen() { tv.toggle_fullscreen(); }

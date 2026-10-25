@@ -1,16 +1,15 @@
-/* Модель канала для проверки CL.COM (tools/test_cl.py): настоящий
- * vchan.c, а вместо ПЛИС -- две очереди по 16 байт, как в hdl/vchan.v, и
- * плата в памяти. Собирается в разделяемую библиотеку и зовётся из питона.
- * Эмулятор 8080 дёргает sim_in/sim_out на IN/OUT, а sim_esp -- опрос ESP. */
+/* Модель канала для проверки программ «Вектора» (tools/test_cl.py,
+ * tools/test_term.py) и для эмулятора: настоящий vchan.c и modem.c, а вместо
+ * ПЛИС -- две очереди по 16 байт, как в hdl/vchan.v, и плата в памяти.
+ * Собирается в разделяемую библиотеку и зовётся из питона. Эмулятор 8080
+ * дёргает sim_in/sim_out на IN/OUT портов 28h-2Dh, а sim_esp -- опрос ESP. */
 
 #include "vchan.h"
 #include "board.h"
 #include "combo.h"
-#include "term.h"
+#include "modem.h"
 
-void term_lock(void) { }
-void term_unlock(void) { }
-/* Палитра машины и регистр квазидиска 10h -- для ответа на TERM_OPEN. Стенды
+/* Палитра машины и регистр квазидиска 10h -- для ответа на DIAG. Стенды
  * берут заглушки, эмулятор (v06x, ветка combolite) ставит свои крюки. */
 static int stub_palette(uint8_t pal[SCR_PAL_BYTES])
 {
@@ -64,31 +63,33 @@ int sim_field(int id)
 }
 
 /* ---------------------------------------------------------- ПЛИС */
-/* Как hdl/vchan.v: очереди по CHAN_DEPTH байт, ESP видит только «пусто». */
+/* Как hdl/vchan.v: подмножество UART 16550 с базой 28h, очереди по CHAN_DEPTH
+ * байт, ESP видит только «пусто». */
 #define Q CHAN_DEPTH
 static uint8_t v2e[16], e2v[16];
-static int v2e_r, v2e_n, e2v_r, e2v_n, flushed, polled;
-int sim_esp_on = 1;                 /* 0 -- ESP молчит, «не жива» */
+static int v2e_r, v2e_n, e2v_r, e2v_n, flushed, polled, dlab;
+int sim_esp_on = 1;                 /* 0 -- ESP молчит, LSR = 00h */
 
 static void flush(void) { v2e_r = v2e_n = e2v_r = e2v_n = 0; flushed = 1; }
 
 int sim_in(int port)
 {
     uint8_t b;
-    if (port == 0x5A)
-        return (polled ? 0x80 : 0) | 0x28 | (v2e_n < Q ? 2 : 0) | (e2v_n ? 1 : 0);
-    if (port == 0x59) {
+    if (port == 0x2D)               /* LSR: DR, THRE, TEMT */
+        return polled ? ((v2e_n == 0 ? 0x40 : 0) | (v2e_n < Q ? 0x20 : 0) | (e2v_n ? 1 : 0)) : 0x00;
+    if (port == 0x28 && !dlab) {
         if (!e2v_n) return 0;
         b = e2v[e2v_r]; e2v_r = (e2v_r + 1) & 15; e2v_n--;
         return b;
     }
-    return 0xFF;                    /* чужой порт: пустая шина */
+    return 0xFF;                    /* прочее не отвечает: пустая шина */
 }
 
 void sim_out(int port, int val)
 {
-    if (port == 0x59 && v2e_n < Q) { v2e[(v2e_r + v2e_n) & 15] = (uint8_t)val; v2e_n++; }
-    if (port == 0x5A && (val & 1)) flush();
+    if (port == 0x28 && !dlab && v2e_n < Q) { v2e[(v2e_r + v2e_n) & 15] = (uint8_t)val; v2e_n++; }
+    if (port == 0x2A && (val & 6)) flush();
+    if (port == 0x2B) dlab = (val >> 7) & 1;
 }
 
 int combo_chan_read(uint8_t *buf, int max, int *free, int *fl)
@@ -110,9 +111,9 @@ void sim_esp(unsigned now_ms)
 {
     if (!sim_esp_on) return;
     polled = 1;
-    term_pump(now_ms);
+    modem_poll(now_ms);
     vchan_poll(now_ms);
 }
 
-/* Терминал: модем и экран (term.c) -- до первого опроса. */
-void sim_init(void) { term_init(); }
+/* Модем -- до первого опроса. */
+void sim_init(void) { modem_init(); }

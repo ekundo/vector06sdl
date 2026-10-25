@@ -167,6 +167,8 @@ func _ready():
 	nice_tooltip.enabled = true
 	
 	install_basic_hooks() # generic basic hooks
+	# start with the bottom panel hidden: clicks no longer close it, F10 opens it
+	call_deferred("hide_hud_panel")
 	
 	about_label.material = null # undemanding default material
 
@@ -179,6 +181,9 @@ func _notification(what):
 		save_state()
 	if what == NOTIFICATION_WM_FOCUS_OUT:
 		osk_panel.all_keys_up()
+		window_focused = false
+	if what == NOTIFICATION_WM_FOCUS_IN:
+		window_focused = true
 
 # Called whenever a joypad has been connected or disconnected.
 func _on_joy_connection_changed(device_id, connected):
@@ -208,6 +213,7 @@ func _physics_process(delta):
 	
 	var buttmap = v06x.ExecuteFrame()  # buttmap is 576x288, 32bpp
 	updateTexture(buttmap)
+	update_mouse()
 	var sound = v06x.GetSound(MIX_SAMPLERATE / Engine.target_fps)  # playback.get_frames_available())
 	update_playback(sound)
 	rus_lat.set_lit(v06x.GetRusLat())
@@ -504,8 +510,54 @@ func _osk_break(scancode):
 	#print("break: ", scancode)
 	v06x.KeyUp(scancode)
 
+# KTSerg mouse (port D4h): pointer over the screen texture -> emulator; the host arrow
+# is hidden over the picture while the program keeps the mouse switched on
+var mouse_wheel_steps := 0
+var mouse_pan := 0.0		# macOS trackpad: two-finger scroll comes as a pan gesture, not as wheel buttons
+var mouse_hidden := false
+var window_focused := true
+
+func update_mouse():
+	var scr : TextureRect = $VectorScreen
+	var lp = scr.get_local_mouse_position()
+	var buttons = 0
+	if not $FileDialog.visible:
+		var mask = Input.get_mouse_button_mask()
+		if mask & BUTTON_MASK_LEFT: buttons |= 1
+		if mask & BUTTON_MASK_RIGHT: buttons |= 2
+		if mask & BUTTON_MASK_MIDDLE: buttons |= 4
+	var tx = int(lp.x * 576 / max(scr.rect_size.x, 1))
+	var ty = int(lp.y * 288 / max(scr.rect_size.y, 1))
+	var inside = v06x.SetMouse(tx, ty, buttons, mouse_wheel_steps)
+	mouse_wheel_steps = 0
+	# the arrow stays visible over an inactive window: there the pointer belongs to the host
+	var hide = inside and window_focused and v06x.IsMouseEnabled() and not $FileDialog.visible
+	if hide != mouse_hidden:
+		mouse_hidden = hide
+		Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN if hide else Input.MOUSE_MODE_VISIBLE)
+
 func _input(event: InputEvent):
 	if $FileDialog.visible:
+		return
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == BUTTON_WHEEL_UP:
+			mouse_wheel_steps += 1
+		elif event.button_index == BUTTON_WHEEL_DOWN:
+			mouse_wheel_steps -= 1
+	if event is InputEventPanGesture:
+		# a wheel step per unit of pan (about 30 points of finger travel), sign as the wheel
+		mouse_pan += event.delta.y
+		while mouse_pan >= 1.0:
+			mouse_wheel_steps -= 1
+			mouse_pan -= 1.0
+		while mouse_pan <= -1.0:
+			mouse_wheel_steps += 1
+			mouse_pan += 1.0
+	# F10: the bottom panel (on-screen keyboard etc.), clicks belong to the program
+	if event is InputEventKey and event.scancode == KEY_F10:
+		if event.pressed and not event.echo:
+			_on_click_timer()
+		get_tree().set_input_as_handled()
 		return
 	if event is InputEventKey:
 		if event.pressed:
@@ -545,13 +597,8 @@ func hide_hud_panel():
 	call_deferred("_on_size_changed")
 
 func _on_main_gui_input(event):
-	if event is InputEventMouseButton and event.button_index == BUTTON_LEFT:
-		if event.pressed:
-			if event.doubleclick:
-				click_timer.stop()
-				toggle_fullscreen()
-			else:
-				click_timer.start()
+	# clicks no longer open the panel (F10) or toggle fullscreen (Alt+Enter): they go to the program
+	pass
 
 func update_playback(buffer : PoolVector2Array):
 	playback.push_buffer(buffer)

@@ -1,9 +1,9 @@
-/* Канал «Вектор» <-> ESP: разбор кадров и ответы. Протокол -- vchan.h. */
+/* Канал «Вектор» <-> ESP: модем или кадры настроек. Протокол -- vchan.h. */
 
 #include "vchan.h"
 #include "board.h"
 #include "combo.h"
-#include "term.h"
+#include "modem.h"
 
 #include <string.h>
 
@@ -17,11 +17,18 @@ static uint32_t last_ms;
 
 /* Ответы копятся здесь, пока в очереди ПЛИС нет места. Двух кадров хватает:
  * «Вектор» ждёт ответа на каждый запрос, прежде чем слать следующий. */
-#define TXQ 512                 /* ответ TERM_IO -- до 6 + 1 + TERM_DIFF_MAX */
+#define TXQ 128
 static uint8_t txq[TXQ];
 static int     tx_head, tx_len;
 
-void vchan_reset(void) { st = R_SYNC; }
+/* Режим канала: модем, пока сразу после очистки не пришла строка VCHAN_CL. */
+static const char cl_word[] = VCHAN_CL;
+static int      frames;                 /* 1 -- кадры настроек */
+static int      fresh = 1;              /* очистка была, VCHAN_CL ещё может прийти */
+static int      held;                   /* сколько знаков VCHAN_CL уже совпало */
+
+void vchan_reset(void) { st = R_SYNC; frames = 0; fresh = 1; held = 0; }
+int  vchan_frames(void) { return frames; }
 
 static void tx_put(uint8_t b)
 {
@@ -70,25 +77,19 @@ static void set_field(board_settings_t *s, int id, uint8_t v)
 static void handle(void)
 {
     board_settings_t s;
-    uint8_t f[VF_COUNT], info[5], diff[TERM_DIFF_MAX], pal[SCR_PAL_BYTES], open[21];
+    uint8_t f[VF_COUNT], info[5], diag[1 + SCR_PAL_BYTES + 1];
     int i, status = VS_OK;
 
-    switch (op) {
-    case VOP_TERM_OPEN:
-        if (len != 1 || data[0] > 2) { reply(VS_LEN, 0, 0); return; }
-        term_open(data[0]);
-        /* Что вернуть на выходе: регистр квазидиска видит ПЛИС (0x38), палитру
-         * -- журнал кадра. Без палитры (старый битстрим) -- чёрный и белый,
-         * как у консоли. */
-        open[0] = combo_diag(0);
-        if (board_palette(pal) == 0) for (i = 0; i < 16; i++) open[1 + i] = pal[i];
-        else for (i = 0; i < 16; i++) open[1 + i] = (i & 6) ? 0xF6 : 0x00;
-        term_colors(open + 17);
-        reply(VS_OK, open, 21);
-        return;
-    case VOP_TERM_IO:
-        i = term_io(data, len, diff, TERM_DIFF_MAX);
-        reply(VS_OK, diff, i);
+    if (op == VOP_DIAG) {
+        /* Что TERM.COM вернёт ОС на выходе: регистр квазидиска видит ПЛИС
+         * (0x38), палитру -- журнал кадра. Без палитры (старый битстрим) --
+         * чёрный и белый, как у консоли. */
+        if (len) { reply(VS_LEN, 0, 0); return; }
+        diag[0] = combo_diag(0);
+        if (board_palette(diag + 1) != 0)
+            for (i = 0; i < 16; i++) diag[1 + i] = (i & 6) ? 0xF6 : 0x00;
+        diag[17] = (uint8_t)(modem_online() != 0);  /* прошлая программа не положила трубку */
+        reply(VS_OK, diag, 18);
         return;
     }
     board_get(&s);
@@ -120,7 +121,7 @@ static void handle(void)
     reply((uint8_t)status, f, VF_COUNT);
 }
 
-void vchan_rx(uint8_t b, uint32_t now_ms)
+static void frame_rx(uint8_t b, uint32_t now_ms)
 {
     if (st != R_SYNC && (uint32_t)(now_ms - last_ms) > VCHAN_IDLE_MS) st = R_SYNC;
     last_ms = now_ms;
@@ -146,6 +147,26 @@ void vchan_rx(uint8_t b, uint32_t now_ms)
     }
 }
 
+/* Байт с «Вектора». Сразу после очистки строка VCHAN_CL переводит канал в
+ * кадры; пока она совпадает, байты придерживаются, разошлась -- уходят модему
+ * все. Так перехват работает и посреди соединения, а модем без CL.COM не
+ * видит разницы: «AT*CL» у него -- обычная неизвестная команда. */
+void vchan_rx(uint8_t b, uint32_t now_ms)
+{
+    int i;
+    if (frames) { frame_rx(b, now_ms); return; }
+    if (fresh) {
+        if (b == (uint8_t)cl_word[held]) {
+            if (cl_word[++held]) return;
+            frames = 1; fresh = 0; held = 0; st = R_SYNC;
+            return;
+        }
+        for (i = 0; i < held; i++) modem_put((uint8_t)cl_word[i]);
+        fresh = 0; held = 0;
+    }
+    modem_put(b);
+}
+
 int vchan_tx_pending(void) { return tx_len; }
 
 int vchan_tx_take(uint8_t *out, int max)
@@ -156,6 +177,8 @@ int vchan_tx_take(uint8_t *out, int max)
         tx_head = (tx_head + 1) % TXQ;
         tx_len--;
     }
+    if (!frames)                        /* модем: его ответы и данные из сети */
+        while (n < max && modem_get(&out[n])) n++;
     return n;
 }
 
@@ -168,14 +191,15 @@ int vchan_poll(uint32_t now_ms)
     n = combo_chan_read(buf, (int)sizeof buf, &free, &flushed);
     if (n < 0) return 0;
     /* Очистка с «Вектора»: начатый кадр и неотданные ответы -- от прежней
-     * программы. Байты, взятые этим же опросом, пришли уже после очистки. */
+     * программы, канал -- снова модем. Байты, взятые этим же опросом, пришли
+     * уже после очистки. Соединение модема и его неотданное не трогаются:
+     * терминал, вернувшись, продолжит с того же места. */
     if (flushed) { vchan_reset(); tx_len = 0; }
     moved = n > 0;
     for (i = 0; i < n; i++) vchan_rx(buf[i], now_ms);
-    if (tx_len && free > 0) {
+    if (free > 0) {
         n = vchan_tx_take(buf, free < (int)sizeof buf ? free : (int)sizeof buf);
-        combo_chan_write(buf, n);
-        moved = 1;
+        if (n) { combo_chan_write(buf, n); moved = 1; }
     }
     return moved ? 2 : 1;
 }

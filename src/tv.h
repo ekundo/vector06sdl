@@ -41,6 +41,8 @@ private:
     GLuint gl_program_id;
 #endif
     int gl_window_width, gl_window_height;
+    int gl_window_x = 0, gl_window_y = 0;   // viewport origin, window points
+    int logical_width = 0, logical_height = 0;
 
 private:
     void render_with_blend(int src_alpha);
@@ -65,4 +67,9 @@ public:
     void render(int executed);
     int get_refresh_rate() const;
     void handle_window_event(SDL_Event & event);
+#if !defined(__ANDROID_NDK__) && !defined(__GODOT__)
+    /* window point (mouse event) -> Vector picture: x 0..511 (512 mode), row 0..255 from the top */
+    bool window_to_picture(int mx, int my, int & x512, int & row) const;
+    void show_cursor(bool show);
+#endif
 };

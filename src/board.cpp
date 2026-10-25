@@ -176,6 +176,7 @@ void Board::set_bootrom(const std::vector<uint8_t>& bootbytes)
 void Board::reset(Board::ResetMode mode)
 {
     this->soundnik.reset();
+    this->io.mouse.reset();
 
     switch (mode) {
         case ResetMode::BLKVVOD:
@@ -514,6 +515,50 @@ void Board::handle_quit()
 }
 
 /* ui thread */
+#if !defined(__ANDROID_NDK__) && !defined(__GODOT__)
+void Board::handle_mouse_event(SDL_Event& event)
+{
+    int mx, my, x512, row;
+    switch (event.type) {
+        case SDL_MOUSEMOTION:
+            mx = event.motion.x; my = event.motion.y;
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+            mx = event.button.x; my = event.button.y;
+            break;
+        case SDL_MOUSEWHEEL:
+            io.mouse.host_wheel(event.wheel.y);
+            return;
+        case SDL_WINDOWEVENT:
+            if (event.window.event == SDL_WINDOWEVENT_LEAVE) {
+                this->mouse_inside = false;
+                update_cursor();
+            }
+            return;
+        default:
+            return;
+    }
+    uint32_t sb = SDL_GetMouseState(NULL, NULL);
+    io.mouse.host_buttons((sb & SDL_BUTTON_LMASK ? 1 : 0) | (sb & SDL_BUTTON_RMASK ? 2 : 0) |
+        (sb & SDL_BUTTON_MMASK ? 4 : 0));
+    this->mouse_inside = tv.window_to_picture(mx, my, x512, row);
+    if (this->mouse_inside) {
+        io.mouse.host_move(x512, 255 - row);
+    }
+    update_cursor();
+}
+
+void Board::update_cursor()
+{
+    bool hide = this->mouse_inside && io.mouse.is_enabled();
+    if (hide != this->cursor_hidden) {
+        this->cursor_hidden = hide;
+        tv.show_cursor(!hide);
+    }
+}
+#endif
+
 void Board::handle_window_event(SDL_Event& event)
 {
     this->tv.handle_window_event(event);

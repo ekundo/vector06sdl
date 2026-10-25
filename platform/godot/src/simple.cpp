@@ -25,6 +25,8 @@ V06X_DECL(V06X_Init);
 V06X_DECL(V06X_ExecuteFrame);
 V06X_DECL(V06X_GetSound);
 V06X_DECL(V06X_KeyDown);
+V06X_DECL(V06X_SetMouse);
+V06X_DECL(V06X_IsMouseEnabled);
 V06X_DECL(V06X_KeyUp);
 V06X_DECL(V06X_LoadAsset);
 V06X_DECL(V06X_Mount);
@@ -111,6 +113,8 @@ extern "C" void GDN_EXPORT godot_nativescript_init(void* p_handle)
     V06X_METHOD("ExecuteFrame", V06X_ExecuteFrame);
     V06X_METHOD("GetSound", V06X_GetSound);
     V06X_METHOD("KeyDown", V06X_KeyDown);
+    V06X_METHOD("SetMouse", V06X_SetMouse);
+    V06X_METHOD("IsMouseEnabled", V06X_IsMouseEnabled);
     V06X_METHOD("KeyUp", V06X_KeyUp);
     V06X_METHOD("LoadAsset", V06X_LoadAsset);
     V06X_METHOD("Mount", V06X_Mount);
