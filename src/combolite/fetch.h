@@ -33,4 +33,14 @@ int  fetch_status(void);
 /* Закончить (и прервать, если ещё идёт). */
 void fetch_close(void);
 
+/* Gemini (мост в modem.c): TLS на host:port, запрос -- url и CR LF, ответ
+ * сервера целиком (строка состояния и тело) -- тем же fetch_read. Сертификат
+ * -- «доверие с первого раза»: отпечаток запоминается при первом заходе на
+ * хост, другой -- FETCH_FAIL с fetch_status() == FETCH_CERT, пока не придёт
+ * trust_new. На маке проверки нет (стенды, эмуляторы), в Windows Gemini нет
+ * вовсе (-1). COMBO_GEMINI_CONNECT=хост:порт на маке подменяет, куда
+ * соединяться (имя для SNI остаётся) -- стенд без сети. */
+#define FETCH_CERT  1
+int  fetch_gemini(const char *host, int port, const char *url, int trust_new);
+
 #endif
