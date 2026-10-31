@@ -82,7 +82,7 @@ static char     last_dial[80];          /* для ATDL */
  * NICK и USER, telnet-BBS торгуется сразу. Пока вид не ясен, байты от машины
  * ждут: telnet и сырой TCP шлют их по-разному (IAC IAC, CR NUL). */
 #define CONN_WAIT_MS 1000u
-enum { C_UNKNOWN, C_TELNET, C_RAW, C_GOPHER };
+enum { C_UNKNOWN, C_TELNET, C_RAW, C_GOPHER, C_TLS };
 static int      conn;
 static uint32_t conn_ms;
 
@@ -98,6 +98,9 @@ static char     g_sel[256];
 static int      g_sel_n;
 static int      g_gem;                  /* мост Gemini (порт 1965), а не Gopher */
 
+/* TLS-туннель (порт 443): соединение без сокета, байты -- через fetch.h. */
+static int      tls_on;                 /* 0 -- нет, 1 -- соединяемся, 2 -- на линии */
+
 /* Входящие (doc/MODEM.md): слушаем порт AT$SP, звонок -- RING раз в две
  * секунды, ATA отвечает, ATS0=n -- ответить самим на n-м звонке. По умолчанию
  * порт закрыт: иначе «Вектор» виден всей сети. Занята линия -- входящему
@@ -110,7 +113,7 @@ static int      ring_n;
 static uint32_t ring_ms, ring_start_ms;
 static int      s0;                     /* ATS0: на каком звонке отвечать, 0 -- не самим */
 
-static int line_up(void) { return sock >= 0 || gopher; }
+static int line_up(void) { return sock >= 0 || gopher || tls_on; }
 
 int modem_online(void) { return line_up() && mode == M_ONLINE; }
 int modem_line(void) { return line_up(); }
@@ -119,6 +122,8 @@ static void hang_up(void)
 {
     if (gopher) fetch_close();
     gopher = 0;
+    if (tls_on) tls_close();
+    tls_on = 0;
     if (sock >= 0) net_close(sock);
     sock = -1;
     net_out_n = 0;
@@ -314,7 +319,7 @@ static void gopher_char(uint8_t b);
 static void tn_out(uint8_t b)
 {
     if (conn == C_GOPHER) { gopher_char(b); return; }
-    if (conn == C_RAW) { net_raw(b); return; }
+    if (conn == C_RAW || conn == C_TLS) { net_raw(b); return; }
     if (conn == C_TELNET && !bit(him_on, O_ECHO)) local_echo(b);
     if (b == T_IAC) { net_raw(T_IAC); net_raw(T_IAC); return; }
     net_raw(b);
@@ -852,6 +857,39 @@ static void gem_pump(void)
     }
 }
 
+/* ---------------------------------------------------------- TLS-туннель
+ * Набор на порт 443 -- TLS к этому хосту, CONNECT -- когда соединились.
+ * Дальше байты как у сырого TCP: от машины -- через net_out, к машине -- сколько
+ * влезет. Сервер закрыл -- NO CARRIER. */
+static void tls_pump(uint32_t now_ms)
+{
+    uint8_t buf[256];
+    int n, i;
+
+    if (tls_on == 1) {
+        n = tls_ready();
+        if (n < 0 || (n == 0 && now_ms - dial_ms >= DIAL_TIMEOUT_MS)) { hang_up(); result("NO ANSWER"); return; }
+        if (n == 0) return;
+        tls_on = 2;
+        mode = M_ONLINE;
+        last_in_ms = now_ms;
+        result("CONNECT");
+    }
+    if (net_out_n) {
+        n = tls_write(net_out, net_out_n);
+        if (n > 0) {
+            memmove(net_out, net_out + n, (size_t)(net_out_n - n));
+            net_out_n -= n;
+        }
+    }
+    n = ring_room(&to_vec) - 16;
+    if (n > (int)sizeof buf) n = (int)sizeof buf;
+    if (n <= 0) return;
+    n = tls_read(buf, n);
+    if (n > 0) { for (i = 0; i < n; i++) ring_put(&to_vec, buf[i]); return; }
+    if (n == FETCH_DONE || n == FETCH_FAIL) { hang_up(); result("NO CARRIER"); }
+}
+
 /* ---------------------------------------------------------- набор */
 static void dial(const char *arg, uint32_t now_ms)
 {
@@ -884,6 +922,15 @@ static void dial(const char *arg, uint32_t now_ms)
         result("CONNECT");
         return;
     }
+    if (!strcmp(port, "443")) {         /* TLS-туннель: шифрование -- за fetch.h */
+        if (tls_open(host, 443) != 0) { result("NO ANSWER"); return; }
+        tls_on = 1;
+        tn_reset();
+        conn = C_TLS;
+        dial_ms = now_ms;
+        mode = M_DIAL;
+        return;
+    }
     net_start();
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
@@ -903,7 +950,8 @@ static void dial(const char *arg, uint32_t now_ms)
 /* ---------------------------------------------------------- справка и BBS */
 static const char help[] =
     "\r\nAT commands (the line ends with Return):\r\n"
-    "  ATDT host[:port]   dial, port 23 by default\r\n"
+    "  ATDT host[:port]   dial, port 23 by default; 443 -- over TLS, 1965 --\r\n"
+    "                     Gemini as Gopher\r\n"
     "  ATBBS [word]       BBS list from the Telnet BBS Guide: search by name,\r\n"
     "                     address, software or place\r\n"
     "  ATDS n             dial BBS number n from the list\r\n"
@@ -1147,6 +1195,7 @@ void modem_poll(uint32_t now_ms)
             if (s0 && ring_n >= s0) answer(now_ms);
         }
     }
+    if (tls_on) { tls_pump(now_ms); return; }
     if (sock < 0) return;
 
     if (mode == M_DIAL) {

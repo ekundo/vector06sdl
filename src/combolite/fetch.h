@@ -43,4 +43,16 @@ void fetch_close(void);
 #define FETCH_CERT  1
 int  fetch_gemini(const char *host, int port, const char *url, int trust_new);
 
+/* TLS-туннель (modem.c: набор на порт 443): байты в обе стороны как есть,
+ * HTTP и прочее -- забота программы на «Векторе». Сертификат на плате
+ * проверяется набором корневых ESP-IDF; на маке -- openssl s_client, а
+ * COMBO_TLS_CONNECT=хост:порт подменяет, куда соединяться, и проверку
+ * снимает (стенд с самоподписанным). В Windows туннеля нет (-1). Один за раз,
+ * вместе со скачиванием -- тоже один. */
+int  tls_open(const char *host, int port);
+int  tls_ready(void);                   /* 1 -- соединились, 0 -- ещё нет, -1 -- не вышло */
+int  tls_write(const uint8_t *buf, int n);      /* сколько взято, 0 -- пока некуда */
+int  tls_read(uint8_t *buf, int max);   /* как fetch_read: >0, 0, FETCH_DONE, FETCH_FAIL */
+void tls_close(void);
+
 #endif
