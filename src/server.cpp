@@ -389,7 +389,14 @@ Server * srv;
 
 void start_gdb_server(Board & board)
 {
-    srv = new Server(iosrv, 4000, board);
+    /* Порт отладчика занят другим v06x -- работать без отладчика, а не падать:
+     * второй эмулятор рядом (прогоны без окна) иначе не запускается. */
+    try {
+        srv = new Server(iosrv, 4000, board);
+    } catch (const std::exception & e) {
+        fprintf(stderr, "gdb server: %s, running without it\n", e.what());
+        srv = nullptr;
+    }
 }
 
 void poll_gdb_server()
