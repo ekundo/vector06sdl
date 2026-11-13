@@ -7,6 +7,7 @@ const EDD : int = 3
 const WAV : int = 4
 const DIR : int = 5
 const BIN : int = 6 # boot rom
+const HDD : int = 7 # hard disk image, ATA at ports 50h-58h (AttachHdd)
 const BAS : int = 10 # script-supported BASIC file
 const ASC : int = 11 # script-supported BASIC ASCII source
 const CAS : int = 12 # encapsulated BAS file
@@ -14,6 +15,7 @@ const CAS : int = 12 # encapsulated BAS file
 const MIX_SAMPLERATE : int = 48000
 
 const V06X = preload("res://bin/v06x.gdns")
+var hdd_path : String = ""	# attached hard disk image, kept in v06x.settings
 onready var v06x : V06X = V06X.new()
 
 var texture : ImageTexture
@@ -247,12 +249,12 @@ func _on_files_dropped(files: PoolStringArray, screen: int):
 		_on_FileDialog_file_selected(files[0])
 
 func _on_load_asset_pressed(which: int):
-	var titles = ["Select ROM image, WAV file, floppy A: image, or directory", "Select floppy B: image or directory", "Boot ROM image",
+	var titles = ["Select ROM image, WAV file, floppy A: image, hard disk image, or directory", "Select floppy B: image or directory", "Boot ROM image",
 		"Load .CAS, .BAS or .BIN file"]
 	dialog_device = which
 	$FileDialog.current_dir = loadedFileDir[dialog_device]
 	$FileDialog.window_title = titles[dialog_device]
-	$FileDialog.filters = ["*.rom,*.r0m,*.vec,*.bin,*.fdd,*.wav,*.bas,*.cas,*.asc"]
+	$FileDialog.filters = ["*.rom,*.r0m,*.vec,*.bin,*.fdd,*.hdd,*.img,*.wav,*.bas,*.cas,*.asc"]
 	if dialog_device == DialogDevice.B:
 		$FileDialog.filters = ["*.fdd"]
 	elif dialog_device == DialogDevice.BOOT:
@@ -387,6 +389,13 @@ func update_load_asses() -> void:
 
 # return true if should autostart
 func load_file(dev: int, path: String) -> bool:
+	if getKind(path)[0] == HDD:
+		# the image stays open for writing: the core works on the file itself
+		if v06x.AttachHdd(path):
+			hdd_path = path
+			nice_tooltip.showTooltip(loadass[0].rect_global_position, "HDD: " + path.get_file())
+			save_config()
+		return false
 	debug_panel.debug_load_labels(path)
 	var file = File.new()
 	if file.open(path, File.READ) == OK:
@@ -482,6 +491,8 @@ func getKind(path : String):
 		ret = [ROM, 0, true]
 	elif ext == "fdd":
 		ret = [FDD, 0, false]
+	elif ext == "hdd" || ext == "img":
+		ret = [HDD, 0, false]
 	elif ext == "edd":
 		ret = [EDD, 0, true]
 	elif ext == "wav":
@@ -656,6 +667,7 @@ func save_config():
 	cfg.set_value("sound", "volume_covox", sound_panel.get_volume(3))
 	cfg.set_value("sound", "volume_db", sound_panel.get_volume(4))
 	
+	cfg.set_value("hdd", "file", hdd_path)
 	cfg.set_value("shader", "index", shader_index)
 	cfg.set_value("aspect", "aspect_ratio_index", maintained_aspect_index)
 	cfg.set_value("aspect", "pixel_scale_index", pixel_scale_index)
@@ -697,6 +709,10 @@ func load_config():
 
 		shader_index = cfg.get_value("shader", "index", 0)
 		_on_shader_selected(shader_index)
+
+		var hdd = cfg.get_value("hdd", "file", "")
+		if hdd != null and hdd != "" and File.new().file_exists(hdd) and v06x.AttachHdd(hdd):
+			hdd_path = hdd
 		
 		maintained_aspect_index = cfg.get_value("aspect", "aspect_ratio_index", maintained_aspect_index)
 		pixel_scale_index = cfg.get_value("aspect", "pixel_scale_index", pixel_scale_index)

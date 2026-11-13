@@ -437,6 +437,26 @@ godot_variant V06X_Mount(godot_object* p_instance, void* p_method_data,
     return ret;
 }
 
+// AttachHdd(path): образ винчестера на портах 50h-58h (src/hdd.h). Ключа --hdd
+// у оболочки нет, путь даёт main.gd (окно файлов, перетаскивание, настройки).
+// UTF-8: в путях бывает кириллица.
+godot_variant V06X_AttachHdd(godot_object* p_instance, void* p_method_data,
+  void* p_user_data, int p_num_args, godot_variant** p_args)
+{
+    godot_string wpath = api->godot_variant_as_string(p_args[0]);
+    godot_char_string cpath = api->godot_string_utf8(&wpath);
+    std::string path = api->godot_char_string_get_data(&cpath);
+    api->godot_char_string_destroy(&cpath);
+    api->godot_string_destroy(&wpath);
+
+    bool ok = !path.empty() && io.hdd.attach(path);
+    if (!ok) printf("AttachHdd: %s failed\n", path.c_str());
+
+    godot_variant ret;
+    api->godot_variant_new_bool(&ret, ok);
+    return ret;
+}
+
 // extern "C" JNIEXPORT void JNICALL
 // Java_com_svofski_v06x_cpp_Emulator_reset(JNIEnv *env, jobject /* this */,
 // jboolean blkvvod)
