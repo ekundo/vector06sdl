@@ -36,8 +36,9 @@ _options Options =
     .border_width = DEFAULT_BORDER_WIDTH,
     .center_offset = DEFAULT_CENTER_OFFSET,
 
-    // timer, beeper, ay, covox, global
-    .volume = {0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 1.5f},
+    // timer, beeper, ay, covox, pcm, global; pcm 0.05 -- полная шкала PCM
+    // ComboLite равна каналу AY, как в смесителе платы (hdl/audio.v)
+    .volume = {0.1f, 0.1f, 0.1f, 0.1f, 0.05f, 1.5f},
     .enable = {/* timer ch0..2 */ true, true, true,
                /* ay ch0..2 */    true, true, true},
     .nofilter = false,
