@@ -15,6 +15,7 @@ struct _options
     bool combolite;             // плата ComboLite: канал к ESP на 59h/5Ah
     int combolite_poll_us;      // период опроса канала ESP, мкс; 0 -- на каждом обращении
     bool combolite_trace;       // раз в кадр: сколько байт ESP отдала «Вектору»
+    std::string combolite_music; // ComboLite: папка дорожек проигрывателя PCM (порт 3Ch)
     int max_frame;
     bool vsync;
     bool novideo;
@@ -28,6 +29,7 @@ struct _options
         float beeper;
         float ay;
         float covox;
+        float pcm;          // проигрыватель PCM ComboLite (порт 3Ch)
         float global;
     } volume;
 

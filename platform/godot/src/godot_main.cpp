@@ -287,6 +287,21 @@ godot_variant V06X_IsMouseEnabled(godot_object* p_instance, void* p_method_data,
     return ret;
 }
 
+// GetTextFrame(): текстовый режим 80x25 платы ComboLite. Плата от него
+// отказалась (05.11.2026), а оболочка v06x.pck, экспортированная 01.11.2026,
+// спрашивает кадр каждый раз: пустой массив -- режим выключен, видна картинка
+// «Вектора».
+godot_variant V06X_GetTextFrame(godot_object* p_instance, void* p_method_data,
+  void* p_user_data, int p_num_args, godot_variant** p_args)
+{
+    godot_pool_byte_array empty;
+    api->godot_pool_byte_array_new(&empty);
+    godot_variant ret;
+    api->godot_variant_new_pool_byte_array(&ret, &empty);
+    api->godot_pool_byte_array_destroy(&empty);
+    return ret;
+}
+
 // extern "C" JNIEXPORT void JNICALL
 // Java_com_svofski_v06x_cpp_Emulator_KeyDown(JNIEnv *env, jobject self, jint
 // scancode)

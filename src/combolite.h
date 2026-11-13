@@ -20,10 +20,23 @@
 // возвращает их на выходе. Палитру эмулятор хранит в цветах экрана, поэтому
 // сырые байты копятся здесь же, на записи (IO::commit_palette).
 #pragma once
+// ПРОИГРЫВАТЕЛЬ PCM (rev5). Почтовый порт 3Ch, протокол -- src/combolite/pcm_play.h:
+// игра пишет байт команды (играть дорожку N, по кругу, стоп, длинная команда с
+// блоком параметров в ОЗУ), плата играет WAV, MP3 или MOD, 44 092 Гц, 8 бит,
+// стерео, поверх AY. Код ESP -- тот же, что на плате (pcm_play.c, декодеры),
+// ПЛИС и задача ESP -- модель в combolite/pcm_host.c (общая с Emu80). Дорожка
+// N -- N-й по алфавиту файл папки --combolite-music (на плате -- music на
+// карте). Отсчёты шагает Soundnik по тактам 1,5 МГц (sound.cpp), так что звук
+// и состояние порта идут по времени «Вектора», и в --nosound тоже.
 
 #include <stdint.h>
 #include <stdio.h>
 #include <functional>
+#include <string>
+#include <stdlib.h>
+#include "combolite/pcm_host.h"
+
+extern bool g_pcm_on;           // sound.cpp: шагать проигрыватель PCM
 
 extern "C" {
     int  sim_in(int port);
@@ -46,6 +59,31 @@ public:
     uint8_t (*kvaz_reg)(void) = nullptr;
 
     static ComboLite *& self() { static ComboLite *p = nullptr; return p; }
+
+    // Проигрыватель PCM: ram -- 64 КБ основного ОЗУ (на плате -- его зеркало),
+    // из него длинные команды берут блок параметров и данные ячеек.
+    bool pcm = false;
+    void enable_pcm(const uint8_t * ram, const std::string & music_dir)
+    {
+        static const uint8_t * mem;
+        mem = ram;
+        // папка: --combolite-music, иначе $COMBOLITE_MUSIC, иначе ~/Music/ComboLite
+        std::string dir = music_dir;
+        if (dir.empty()) {
+            const char * env = getenv("COMBOLITE_MUSIC"), * home = getenv("HOME");
+            if (env && *env) dir = env;
+            else if (home) dir = std::string(home) + "/Music/ComboLite";
+        }
+        pcm_host_init(dir.empty() ? nullptr : dir.c_str(),
+            [](void *, uint16_t a, uint8_t * dst, int n) -> int {
+                for (int i = 0; i < n; ++i) dst[i] = mem[(uint16_t)(a + i)];
+                return 0;
+            }, nullptr);
+        pcm = true;
+        g_pcm_on = true;
+    }
+    int  pcm_in() { return pcm ? pcm_host_in() : 0xff; }
+    void pcm_out(int v) { if (pcm) pcm_host_out((uint8_t)v); }
 
     void enable(uint8_t (*kvaz)(void))
     {

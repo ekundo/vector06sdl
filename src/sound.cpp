@@ -9,6 +9,13 @@
 #include "sound.h"
 
 #include "resampler.h"
+#include "combolite/pcm_host.h"
+
+// Проигрыватель PCM ComboLite (combolite.h): включён -- шагать его отсчёты по
+// тактам 1,5 МГц, 44 092 раза в секунду времени «Вектора».
+bool g_pcm_on = false;
+static unsigned pcm_phase = 0;
+static float pcm_value = 0.f;
 
 static int print_driver_info()
 {
@@ -149,6 +156,17 @@ void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
             + (tapeout + tapein) * Options.volume.beeper
             + Options.volume.covox * (covox/256.0f)
             + Options.volume.ay * ay;
+
+        if (g_pcm_on) {
+            pcm_phase += PCM_HOST_RATE;
+            if (pcm_phase >= 1500000) {
+                int16_t l, r;
+                pcm_phase -= 1500000;
+                pcm_host_step(&l, &r);
+                pcm_value = (l + r) / 65536.f;          // выход моно: среднее каналов
+            }
+            soundf += Options.volume.pcm * pcm_value;
+        }
 
         if (!Options.nosound) {
             soundf = this->resampler.sample(soundf);

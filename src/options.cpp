@@ -37,7 +37,7 @@ _options Options =
     .center_offset = DEFAULT_CENTER_OFFSET,
 
     // timer, beeper, ay, covox, global
-    .volume = {0.1f, 0.1f, 0.1f, 0.1f, 1.5f},
+    .volume = {0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 1.5f},
     .enable = {/* timer ch0..2 */ true, true, true,
                /* ay ch0..2 */    true, true, true},
     .nofilter = false,
@@ -75,6 +75,7 @@ void options(int argc, char ** argv)
         ("combolite", "ComboLite board: settings channel, Wi-Fi modem and terminal at ports 59h/5Ah")
         ("combolite-poll-us", po::value<int>(), "ComboLite: ESP polls the channel every N us of Vector time (default 10000, as on the board; 0 = on every port access)")
         ("combolite-trace", "ComboLite: print bytes sent from the ESP to the Vector, per frame")
+        ("combolite-music", po::value<std::string>(), "ComboLite: folder of PCM player tracks, port 3Ch (default $COMBOLITE_MUSIC or ~/Music/ComboLite)")
         ("log", po::value<std::string>(), "fdc,audio,video print debug info from systems")
         ("autostart", "autostart based on RUS/LAT blinkage")
         ("max-frame", po::value<int>(), "run emulation for this many frames then exit")
@@ -97,6 +98,8 @@ void options(int argc, char ** argv)
             default_value(Options.volume.ay), "AY volume")
         ("volume-covox", po::value<float>()->
             default_value(Options.volume.covox), "Covox volume")
+        ("volume-pcm", po::value<float>()->
+            default_value(Options.volume.pcm), "ComboLite PCM player volume")
         ("volume", po::value<float>()->
             default_value(Options.volume.global), "Global volume")
         ("nofdc", "detach floppy disk controller")
@@ -188,6 +191,8 @@ void options(int argc, char ** argv)
         if (vm.count("combolite-poll-us"))
             Options.combolite_poll_us = vm["combolite-poll-us"].as<int>();
         Options.combolite_trace = vm.count("combolite-trace") > 0;
+        if (vm.count("combolite-music"))
+            Options.combolite_music = vm["combolite-music"].as<std::string>();
         if (vm.count("hdd")) {
             Options.hddfile = vm["hdd"].as<std::string>();
         }
@@ -308,6 +313,9 @@ void options(int argc, char ** argv)
         }
         if (vm.count("volume-ay") > 0) {
             Options.volume.ay = vm["volume-ay"].as<float>();
+        }
+        if (vm.count("volume-pcm") > 0) {
+            Options.volume.pcm = vm["volume-pcm"].as<float>();
         }
         if (vm.count("volume-covox") > 0) {
             Options.volume.covox = vm["volume-covox"].as<float>();

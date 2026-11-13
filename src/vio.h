@@ -57,6 +57,8 @@ public:
         static Memory * mem;
         mem = &this->kvaz;
         combo.enable([]() -> uint8_t { return mem->get_last_control(); });
+        // основное ОЗУ -- первые 64 КБ буфера памяти, квазидиски -- за ним
+        combo.enable_pcm(mem->buffer(), Options.combolite_music);
     }
 
 public:
@@ -183,6 +185,9 @@ public:
             case 0x28: case 0x29: case 0x2a:             // ComboLite: модем, UART 16550
             case 0x2b: case 0x2c: case 0x2d:
                 result = this->combo.in(port);
+                break;
+            case 0x3c:                                   // ComboLite rev5: почта проигрывателя PCM
+                result = this->combo.pcm_in();
                 break;
             case 0xd4:
                 result = this->mouse.read();
@@ -348,6 +353,9 @@ public:
             case 0x28: case 0x29: case 0x2a:             // ComboLite: модем, UART 16550
             case 0x2b: case 0x2c: case 0x2d:
                 this->combo.out(port, w8);
+                break;
+            case 0x3c:                                   // ComboLite rev5: почта проигрывателя PCM
+                this->combo.pcm_out(w8);
                 break;
             default:
                 break;
