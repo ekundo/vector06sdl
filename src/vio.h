@@ -57,8 +57,7 @@ public:
         static Memory * mem;
         mem = &this->kvaz;
         combo.enable([]() -> uint8_t { return mem->get_last_control(); });
-        // основное ОЗУ -- первые 64 КБ буфера памяти, квазидиски -- за ним
-        combo.enable_pcm(mem->buffer(), Options.combolite_music);
+        combo.enable_pcm(mem, Options.combolite_music);
     }
 
 public:

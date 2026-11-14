@@ -29,6 +29,7 @@
 // карте). Отсчёты шагает Soundnik по тактам 1,5 МГц (sound.cpp), так что звук
 // и состояние порта идут по времени «Вектора», и в --nosound тоже.
 
+#include "memory.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <functional>
@@ -63,9 +64,12 @@ public:
     // Проигрыватель PCM: ram -- 64 КБ основного ОЗУ (на плате -- его зеркало),
     // из него длинные команды берут блок параметров и данные ячеек.
     bool pcm = false;
-    void enable_pcm(const uint8_t * ram, const std::string & music_dir)
+    // ОЗУ -- через Memory: v06x хранит его с перестановкой адресов (tobank), и
+    // прямое чтение буфера по адресу процессора отдавало проигрывателю чужие
+    // байты (блок длинной команды, данные ячеек): 07h отвечало ошибкой
+    void enable_pcm(const Memory * ram, const std::string & music_dir)
     {
-        static const uint8_t * mem;
+        static const Memory * mem;
         mem = ram;
         // папка: --combolite-music, иначе $COMBOLITE_MUSIC, иначе ~/Music/ComboLite
         std::string dir = music_dir;
@@ -76,7 +80,7 @@ public:
         }
         pcm_host_init(dir.empty() ? nullptr : dir.c_str(),
             [](void *, uint16_t a, uint8_t * dst, int n) -> int {
-                for (int i = 0; i < n; ++i) dst[i] = mem[(uint16_t)(a + i)];
+                for (int i = 0; i < n; ++i) mem->export_bytes(dst + i, (uint16_t)(a + i), 1);
                 return 0;
             }, nullptr);
         pcm = true;
