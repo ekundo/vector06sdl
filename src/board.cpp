@@ -423,6 +423,12 @@ void Board::single_step(bool update_screen)
     }
     this->soundnik.soundSteps(this->instr_time / 2, this->io.TapeOut(),
       this->io.Covox(), this->tape_player.sample());
+    {   // V06X_PCSAMPLE=путь: PC и разрешены ли прерывания раз в 10 мс времени «Вектора» (где стоит программа)
+        extern unsigned long long g_clk1m5;
+        static FILE * f = nullptr; static int st = -1; static unsigned long long next = 0;
+        if (st < 0) { const char * p = getenv("V06X_PCSAMPLE"); st = p && *p && (f = fopen(p, "w")); }
+        if (f && g_clk1m5 >= next) { next = g_clk1m5 + 15000; fprintf(f, "%.1f %04X %d\n", g_clk1m5 / 1500.0, i8080_pc(), this->inte ? 1 : 0); }
+    }
 
     /* Edge conditions at the end of screen:
      * if instruction time does not fit within screen time, filler returns

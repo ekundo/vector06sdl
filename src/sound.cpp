@@ -171,8 +171,11 @@ static void wavdump_put(float v)
         fseek(wav_f, 4, SEEK_SET); fwrite(&r, 4, 1, wav_f); fseek(wav_f, 40, SEEK_SET); fwrite(&d, 4, 1, wav_f); fseek(wav_f, pos, SEEK_SET); }
 }
 
+unsigned long long g_clk1m5 = 0;                // такты 1,5 МГц с запуска (метки времени отладочных журналов)
+
 void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
 {
+    g_clk1m5 += nclk1m5;
     covox = covox - 255;
     int ech0 = Options.enable.timer_ch0,
         ech1 = Options.enable.timer_ch1, 

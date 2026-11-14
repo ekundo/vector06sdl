@@ -36,6 +36,7 @@
 #include <string>
 #include <stdlib.h>
 #include "combolite/pcm_host.h"
+extern "C" uint8_t pcm_state(void);   // combolite/pcm_play.c: PCM_ST_* (журнал V06X_PCMLOG)
 
 extern bool g_pcm_on;           // sound.cpp: шагать проигрыватель PCM
 
@@ -87,7 +88,15 @@ public:
         g_pcm_on = true;
     }
     int  pcm_in() { return pcm ? pcm_host_in() : 0xff; }
-    void pcm_out(int v) { if (pcm) pcm_host_out((uint8_t)v); }
+    // V06X_PCMLOG=путь: время (мс от запуска) и байт каждой записи в 3Ch -- промежутки между пинками сторожа
+    void pcm_out(int v)
+    {
+        extern unsigned long long g_clk1m5;
+        static FILE * log = nullptr; static int state = -1;
+        if (state < 0) { const char * p = getenv("V06X_PCMLOG"); state = p && *p && (log = fopen(p, "w")); }
+        if (log) { fprintf(log, "%.3f %02X %02X\n", g_clk1m5 / 1500.0, v & 0xff, pcm ? pcm_state() & 0xff : 0); fflush(log); }
+        if (pcm) pcm_host_out((uint8_t)v);
+    }
 
     void enable(uint8_t (*kvaz)(void))
     {
