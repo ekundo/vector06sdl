@@ -106,6 +106,9 @@ void pcm_host_init(const char *music_dir, pcm_host_mem_fn m, void *c)
     static const pcm_ops_t ops = { x_xchg, x_ring, x_open, x_open_mem, x_mem_read, 0, 0, 0, 0, 0, 0 };   /* ячейки -- в памяти */
     snprintf(music, sizeof music, "%s", music_dir ? music_dir : "");
     mem_fn = m; mem_ctx = c;
+    /* пустое кольцо -- тишина 80h, а не нули: нуль -- это -128, и первый же
+     * блок, до которого ПЛИС дойдёт раньше ESP, давал щелчок в полную шкалу */
+    memset(ring, 0x80, sizeof ring);
     on = 1;
     pcm_host_reset();
     pcm_init(&ops);

@@ -10,6 +10,9 @@
 
 #include "resampler.h"
 #include "combolite/pcm_host.h"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 // Проигрыватель PCM ComboLite (combolite.h): включён -- шагать его отсчёты по
 // тактам 1,5 МГц, 44 092 раза в секунду времени «Вектора».
@@ -138,6 +141,36 @@ namespace std {
 }
 #endif
 
+// V06X_WAV=путь: выход звука в WAV (float 48 кГц моно) без звукового устройства -- для
+// прогонов без окна; заголовок дописывается при выходе
+static FILE * wav_f = nullptr;
+static long wav_n = 0;
+static void wav_close()
+{
+    if (!wav_f) return;
+    uint32_t data = (uint32_t)(wav_n * 4), riff = 36 + data;
+    uint8_t h[44] = {'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',16,0,0,0,3,0,1,0,
+                     0x80,0xbb,0,0,0,0xee,2,0,4,0,32,0,'d','a','t','a',0,0,0,0};
+    memcpy(h + 4, &riff, 4); memcpy(h + 40, &data, 4);
+    fseek(wav_f, 0, SEEK_SET); fwrite(h, 1, 44, wav_f); fclose(wav_f); wav_f = nullptr;
+}
+static bool wavdump()
+{
+    static int state = -1;
+    if (state < 0) {
+        const char * p = getenv("V06X_WAV");
+        state = 0;
+        if (p && *p && (wav_f = fopen(p, "wb"))) { uint8_t z[44] = {0}; fwrite(z, 1, 44, wav_f); atexit(wav_close); state = 1; }
+    }
+    return state > 0;
+}
+static void wavdump_put(float v)
+{
+    fwrite(&v, 4, 1, wav_f); ++wav_n;
+    if ((wav_n & 0xffff) == 0) { long pos = ftell(wav_f); uint32_t d = (uint32_t)(wav_n * 4), r = 36 + d;
+        fseek(wav_f, 4, SEEK_SET); fwrite(&r, 4, 1, wav_f); fseek(wav_f, 40, SEEK_SET); fwrite(&d, 4, 1, wav_f); fseek(wav_f, pos, SEEK_SET); }
+}
+
 void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
 {
     covox = covox - 255;
@@ -173,7 +206,11 @@ void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
             soundf += Options.volume.pcm * pcm_value;
         }
 
-        if (!Options.nosound) {
+        if (wavdump()) {                            // V06X_WAV: отладочная запись выхода, 48 кГц моно
+            float w = this->resampler.sample(soundf);
+            if (resampler.egg) { resampler.egg = false; wavdump_put(std::clamp(w * Options.volume.global, -1.f, 1.f)); }
+        }
+        else if (!Options.nosound) {
             soundf = this->resampler.sample(soundf);
 
             if (resampler.egg) {
