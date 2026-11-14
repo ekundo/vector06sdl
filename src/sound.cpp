@@ -152,10 +152,11 @@ void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
         float ay = this->aywrapper.step2(2, aych0, aych1, aych2);
 
         /* timerwrapper does the stepping of 8253, it must always be called */
-        /* с ComboLite звук идёт из смесителя платы (hdl/audio.v): канал ВИ53 и
-         * PC0 там -- 63 против 510 у канала AY (13.11.2026); вход магнитофона
-         * плата не смешивает */
-        const float bw = g_pcm_on ? 63.f / 510.f : 1.f;
+        /* с ComboLite звук идёт из смесителя платы (hdl/audio.v): канал ВИ53,
+         * PC0, канал AY и полная шкала PCM там равны (rev4-fb-69, решение
+         * владельца 14.11.2026; до того ВИ53 и PC0 были 63 против 510 у канала
+         * AY); вход магнитофона плата не смешивает */
+        const float bw = 1.f;
         float soundf = (this->timerwrapper.singlestep(ech0, ech1, ech2)) * Options.volume.timer * bw
             + (tapeout * bw + tapein) * Options.volume.beeper
             + Options.volume.covox * (covox/256.0f)
