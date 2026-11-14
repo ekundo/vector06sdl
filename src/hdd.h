@@ -13,6 +13,12 @@
 //      57h  состояние (чтение) / команда (запись)
 //      58h  данные, старший байт слова
 //
+// Адрес -- LBA (разряд 6 регистра 56h, так работает T-72) или CHS: так читает
+// загрузчик boots v3.0 (ПЗУ «Вектора» и встроенное в v06x), сектор в 53h с
+// единицы, головка в 56h, цилиндр в 54h/55h. Геометрия CHS -- как у платы
+// ComboLite (fw/hdd4.c, fw/hdd_emu.c): из сектора 0 образа (80h -- секторов на
+// дорожку, 81h -- головок), иначе 63 x 16; команда 91h задаёт свою.
+//
 // Порядок обмена взят у самой T-72 (Source/_E200h.asm, L_D8C1 и L_D8CF):
 // на чтении IN 50h отдаёт младший байт очередного слова, IN 58h -- старший;
 // на записи сначала OUT 58h запоминает старший байт, а OUT 50h досылает
@@ -40,22 +46,39 @@ class Hdd
     uint8_t count = 1;          // сколько секторов осталось в операции
     uint8_t lba[4] = {0, 0, 0, 0xe0};
     uint8_t status = 0x50;      // готов, позиционирован, ошибок нет
+    uint32_t cur = 0;           // сектор операции (LBA), считается при команде
+    unsigned heads = 16, spt = 63;  // геометрия CHS
     bool writing = false;
 
     static const uint8_t ST_READY = 0x50;       // готов и позиционирован
     static const uint8_t ST_DATA = 0x58;        // ... и буфер ждёт данных
     static const uint8_t ST_ERR = 0x51;         // ... и ошибка
 
-    uint32_t sector() const
+    bool lba_mode() const { return lba[3] & 0x40; }
+
+    // адрес по регистрам при команде; false -- за пределами геометрии CHS
+    bool address()
     {
-        return ((uint32_t)(lba[3] & 0x0f) << 24) | ((uint32_t)lba[2] << 16) |
-               ((uint32_t)lba[1] << 8) | lba[0];
+        if (lba_mode()) {
+            cur = ((uint32_t)(lba[3] & 0x0f) << 24) | ((uint32_t)lba[2] << 16) |
+                  ((uint32_t)lba[1] << 8) | lba[0];
+            return true;
+        }
+        unsigned cyl = (unsigned)lba[2] << 8 | lba[1], head = lba[3] & 0x0f;
+        if (lba[0] == 0 || lba[0] > spt || head >= heads) return false;
+        cur = (uint32_t)((cyl * heads + head) * spt + (lba[0] - 1u));
+        return true;
     }
+
+    uint32_t sector() const { return cur; }
 
     void next_sector()
     {
-        for (int i = 0; i < 3; ++i) {
-            if (++lba[i]) break;
+        ++cur;
+        if (lba_mode()) {
+            for (int i = 0; i < 3; ++i) {
+                if (++lba[i]) break;
+            }
         }
     }
 
@@ -68,9 +91,9 @@ class Hdd
                fseek(file, (long)sector() * 512, SEEK_SET) == 0;
     }
 
-    void start_read()
+    void start_read(bool first = false)
     {
-        if (!seek()) { status = ST_ERR; return; }
+        if ((first && !address()) || !seek()) { status = ST_ERR; return; }
         size_t got = fread(buf, 1, sizeof(buf), file);
         for (size_t i = got; i < sizeof(buf); ++i) buf[i] = 0;
         ptr = 0;
@@ -78,9 +101,9 @@ class Hdd
         status = ST_DATA;
     }
 
-    void start_write()
+    void start_write(bool first = false)
     {
-        if (!seek()) { status = ST_ERR; return; }
+        if ((first && !address()) || !seek()) { status = ST_ERR; return; }
         ptr = 0;
         writing = true;
         status = ST_DATA;
@@ -122,6 +145,13 @@ public:
         if (file) {
             fseek(file, 0, SEEK_END);
             sectors = ftell(file) / 512;
+            uint8_t s0[512];
+            heads = 16; spt = 63;
+            if (fseek(file, 0, SEEK_SET) == 0 && fread(s0, 1, sizeof(s0), file) == sizeof(s0) &&
+                s0[0x80] && s0[0x81] && s0[0x81] <= 16) {
+                spt = s0[0x80];
+                heads = s0[0x81];
+            }
         }
         return file != nullptr;
     }
@@ -168,8 +198,12 @@ public:
             case 3: case 4: case 5: case 6: lba[reg - 3] = v; break;
             case 7:
                 switch (v) {
-                    case 0x20: case 0x21: start_read(); break;
-                    case 0x30: case 0x31: start_write(); break;
+                    case 0x20: case 0x21: start_read(true); break;
+                    case 0x30: case 0x31: start_write(true); break;
+                    case 0x91:                  // геометрия CHS: головок, секторов на дорожку
+                        if (count) { heads = (lba[3] & 0x0f) + 1u; spt = count; status = ST_READY; }
+                        else status = ST_ERR;
+                        break;
                     case 0x10:                  // сброс на нулевой цилиндр
                         ptr = sizeof(buf);
                         status = ST_READY;
