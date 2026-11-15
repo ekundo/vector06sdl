@@ -123,6 +123,12 @@ static void trace_init()
 // V06X_VLOG=путь: каждая запись в видеопамять (8000h-FFFFh основного ОЗУ) — кадр растра, строка растра, строка
 // видеопамяти под лучом (fb_row), регистр прокрутки, адрес, старый и новый байт, PC; по 16 байт. Гонка записи с лучом
 unsigned long g_vframe = 0;
+void (*g_pitrd_hook)(int port, int val) = nullptr;
+static FILE * g_pitrd = nullptr; static PixelFiller * g_pfill = nullptr;
+static void pitrd_hook(int port, int val)
+{
+    fprintf(g_pitrd, "%lu %d %d %02X %02X %04X\n", g_vframe, g_pfill->get_raster_line(), g_pfill->get_raster_pixel(), port, val, i8080cpu::i8080_pc());
+}
 extern void (*g_vwrite_hook)(uint32_t bigaddr, uint8_t old, uint8_t w8);
 static PixelFiller * g_vfill = nullptr;
 static FILE * g_vlog = nullptr;
@@ -155,6 +161,7 @@ Board::Board(Memory& _memory, IO& _io, PixelFiller& _filler, Soundnik& _snd,
 {
     {   const char * p = getenv("V06X_VLOG");
         if (p && *p && (g_vlog = fopen(p, "wb"))) { const char * f = getenv("V06X_VLOG_FROM"); g_vfrom = f ? strtoul(f, nullptr, 0) : 0; g_vfill = &_filler; g_vwrite_hook = vlog_hook; atexit([]{ fflush(g_vlog); }); } }
+    { const char * p = getenv("V06X_PITRD"); if (p && *p && (g_pitrd = fopen(p, "w"))) { g_pfill = &_filler; g_pitrd_hook = pitrd_hook; atexit([]{ fflush(g_pitrd); }); } }
     this->inte = false;
 }
 

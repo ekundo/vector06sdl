@@ -148,7 +148,12 @@ public:
             case 0x09:
             case 0x0a:
             case 0x0b:
-                return this->timer.read(~(port & 3));
+                {   // V06X_PITRD (board.cpp): кадр, строка растра, пиксель, байт и PC каждого чтения счётчика 0
+                    extern void (*g_pitrd_hook)(int port, int val);
+                    int v = this->timer.read(~(port & 3));
+                    if (g_pitrd_hook) g_pitrd_hook(port, v);
+                    return v;
+                }
 
                 // Joystick "C"
             case 0x0e:
