@@ -128,6 +128,11 @@ void bootstrap_scriptnik()
             io.the_keyboard().key_down(e);
         };
 
+        scriptnik.mouse = [](int x, int y, int b) {   // мышь KTSerg (D4h) из сценария
+            io.mouse.host_move(x, y);
+            io.mouse.host_buttons(b);
+        };
+
         scriptnik.keyup = [](int scancode) {
             SDL_KeyboardEvent e;
             e.keysym.scancode = (SDL_Scancode)scancode;

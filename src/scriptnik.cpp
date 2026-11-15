@@ -109,6 +109,7 @@ struct scriptnik_engine {
                 "stop_wav_recording");
         chai.add(fun([this](int scancode) { s.keydown(scancode); }), "keydown");
         chai.add(fun([this](int scancode) { s.keyup(scancode); }), "keyup");
+        chai.add(fun([this](int x, int y, int b) { if (s.mouse) s.mouse(x, y, b); }), "mouse");
         chai.add(fun([this](const string & name) { 
 #if !defined(__GODOT__)
                         return (int)SDL_GetScancodeFromName(name.c_str());

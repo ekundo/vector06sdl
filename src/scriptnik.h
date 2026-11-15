@@ -24,6 +24,7 @@ public:
     std::function<int(const std::string &)> scancode_from_name;
     std::function<void(int)> keydown;
     std::function<void(int)> keyup;
+    std::function<void(int,int,int)> mouse;   // x512 0..511, y 0..255 снизу вверх, кнопки (1 левая, 2 правая)
 
     std::function<void(int,int,int)> insert_breakpoint;
     std::function<void(int,int,int)> remove_breakpoint;
