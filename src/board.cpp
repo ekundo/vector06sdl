@@ -455,7 +455,8 @@ void Board::single_step(bool update_screen)
         extern unsigned long long g_clk1m5;
         static FILE * f = nullptr; static int st = -1; static unsigned long long next = 0;
         if (st < 0) { const char * p = getenv("V06X_PCSAMPLE"); st = p && *p && (f = fopen(p, "w")); }
-        if (f && g_clk1m5 >= next) { next = g_clk1m5 + 15000; fprintf(f, "%.1f %04X %d\n", g_clk1m5 / 1500.0, i8080_pc(), this->inte ? 1 : 0); }
+        static unsigned long long from = getenv("V06X_PCFROM") ? strtoull(getenv("V06X_PCFROM"), nullptr, 0) * 1500 : 0;
+        if (f && g_clk1m5 >= next && g_clk1m5 >= from) { static unsigned long long step = getenv("V06X_PCSTEP") ? strtoull(getenv("V06X_PCSTEP"), nullptr, 0) : 15000; next = g_clk1m5 + step; fprintf(f, "%.1f %lu %d %04X %d\n", g_clk1m5 / 1500.0, g_vframe, filler.get_raster_line(), i8080_pc(), this->inte ? 1 : 0); }
     }
 
     /* Edge conditions at the end of screen:
