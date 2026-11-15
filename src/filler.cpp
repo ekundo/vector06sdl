@@ -219,6 +219,7 @@ void PixelFiller::advanceLine(bool updateScreen) {
     this->visible = this->visible || 
         (updateScreen && this->raster_line == this->first_visible_line);
     if (this->raster_line == 312) {
+        extern unsigned long g_vframe; ++g_vframe;     // кадры растра (журнал V06X_VLOG)
         this->raster_line = 0;
         this->visible = false; // blanking starts
         this->brk = true;

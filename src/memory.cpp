@@ -132,10 +132,13 @@ uint8_t Memory::get_byte(uint32_t addr, bool stackrq) const
 }
 
 
+void (*g_vwrite_hook)(uint32_t bigaddr, uint8_t old, uint8_t w8) = nullptr;   // журнал V06X_VLOG (board.cpp)
+
 void Memory::write(uint32_t addr, uint8_t w8, bool stackrq)
 {
     uint32_t bigaddr = this->bigram_select(addr & 0xffff, stackrq);
     uint32_t phys = this->tobank(bigaddr);
+    if (g_vwrite_hook && bigaddr >= 0x8000 && bigaddr < 0x10000) g_vwrite_hook(bigaddr, this->bytes[phys], w8);
     if (this->onwrite) {
         this->onwrite(addr, phys, stackrq, w8);
     }

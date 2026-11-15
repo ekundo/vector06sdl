@@ -120,6 +120,25 @@ static void trace_init()
     atexit([]{ if (trace_file) fclose(trace_file); });
 }
 
+// V06X_VLOG=путь: каждая запись в видеопамять (8000h-FFFFh основного ОЗУ) — кадр растра, строка растра, строка
+// видеопамяти под лучом (fb_row), регистр прокрутки, адрес, старый и новый байт, PC; по 16 байт. Гонка записи с лучом
+unsigned long g_vframe = 0;
+extern void (*g_vwrite_hook)(uint32_t bigaddr, uint8_t old, uint8_t w8);
+static PixelFiller * g_vfill = nullptr;
+static FILE * g_vlog = nullptr;
+static unsigned long g_vfrom = 0;          // V06X_VLOG_FROM: с какого кадра растра писать
+static void vlog_hook(uint32_t bigaddr, uint8_t old, uint8_t w8)
+{
+    if (g_vframe < g_vfrom) return;
+    struct __attribute__((packed)) { uint32_t frame; uint16_t line; uint8_t fbrow, scroll; uint16_t addr; uint8_t old, w8; uint16_t pc; uint16_t pad; } r;
+    r.frame = (uint32_t)g_vframe; r.line = (uint16_t)g_vfill->get_raster_line(); r.fbrow = (uint8_t)g_vfill->get_fb_row();
+    r.scroll = (uint8_t)g_vfill->get_scroll(); r.addr = (uint16_t)bigaddr; r.old = old; r.w8 = w8;
+    r.pc = (uint16_t)i8080cpu::i8080_pc(); r.pad = 0;
+    static uint32_t lastf = 0;
+    if (r.frame != lastf) { fflush(g_vlog); lastf = r.frame; }   // v06x выходит по SIGSEGV — буфер не теряется
+    fwrite(&r, sizeof r, 1, g_vlog);
+}
+
 Board::Board(Memory& _memory, IO& _io, PixelFiller& _filler, Soundnik& _snd,
   TV& _tv, WavPlayer& _tape_player, Debug& _debug)
   : memory(_memory)
@@ -134,6 +153,8 @@ Board::Board(Memory& _memory, IO& _io, PixelFiller& _filler, Soundnik& _snd,
   , scripting(false)
   , script_interrupt(false)
 {
+    {   const char * p = getenv("V06X_VLOG");
+        if (p && *p && (g_vlog = fopen(p, "wb"))) { const char * f = getenv("V06X_VLOG_FROM"); g_vfrom = f ? strtoul(f, nullptr, 0) : 0; g_vfill = &_filler; g_vwrite_hook = vlog_hook; atexit([]{ fflush(g_vlog); }); } }
     this->inte = false;
 }
 

@@ -46,6 +46,8 @@ public:
     int irq_clk;
     auto get_raster_pixel() const -> const int;
     auto get_raster_line() const -> const int;
+    int get_fb_row() const { return fb_row; }
+    int get_scroll() const { return io.ScrollStart(); }
 
 public:
     PixelFiller(Memory & _mem, IO & _io, TV & _tv);
