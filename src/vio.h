@@ -10,6 +10,7 @@
 #include "fd1793.h"
 #include "hdd.h"
 #include "combolite.h"
+#include "i8080.h"
 #include "wav.h"
 #include "mouse.h"
 
@@ -306,6 +307,12 @@ public:
             case 0x09:
             case 0x0a:
             case 0x0b:
+                {   // V06X_PITLOG=путь: время (мс), порт, байт и PC каждой записи в ВИ53 (щелчки таймера)
+                    extern unsigned long long g_clk1m5;
+                    static FILE * f = nullptr; static int st = -1;
+                    if (st < 0) { const char * p = getenv("V06X_PITLOG"); st = p && *p && (f = fopen(p, "w")); }
+                    if (f) { fprintf(f, "%.3f %02X %02X %04X\n", g_clk1m5 / 1500.0, port, w8, i8080cpu::i8080_pc()); fflush(f); }
+                }
                 this->timer.write((~port & 3), w8);
                 break;
 
