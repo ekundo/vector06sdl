@@ -368,7 +368,7 @@ public:
             case 0x3c:                                   // ComboLite rev5: почта проигрывателя PCM
                 this->combo.pcm_out(w8);
                 break;
-            case 0x3a:                                   // метки замера Gobliiins (GOB_MEAS): в журнал V06X_PITRD
+            case 0x39: case 0x3a:                        // метки замера Gobliiins (GOB_MEAS, GOB_IRQM): в журнал V06X_PITRD
                 {   extern void (*g_pitrd_hook)(int port, int val);
                     if (g_pitrd_hook) g_pitrd_hook(port, w8);
                 }
