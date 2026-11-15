@@ -10,6 +10,7 @@
 
 #include "resampler.h"
 #include "combolite/pcm_host.h"
+#include "i8080.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -198,6 +199,12 @@ void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
             + Options.volume.covox * (covox/256.0f)
             + Options.volume.ay * ay;
 
+        {   // V06X_SPKLOG=путь: каждое изменение сигнала динамика -- выходы счётчиков ВИ53 (разряды 0..2) и PC0 (разряд 3)
+            static FILE * f = nullptr; static int st = -1, last = -1;
+            if (st < 0) { const char * p = getenv("V06X_SPKLOG"); st = p && *p && (f = fopen(p, "w")); }
+            if (f) { int v = this->timerwrapper.outs | (tapeout ? 8 : 0);
+                if (v != last) { fprintf(f, "%.4f %X %04X\n", (g_clk1m5 - nclk1m5 + clk) / 1500.0, v, i8080cpu::i8080_pc()); fflush(f); last = v; } }
+        }
         if (g_pcm_on) {
             pcm_phase += PCM_HOST_RATE;
             if (pcm_phase >= 1500000) {

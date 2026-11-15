@@ -408,6 +408,7 @@ private:
     int average_count;
     int last_sound;
 public:
+    int outs = 0;
     TimerWrapper(I8253 & _timer) : timer(_timer),
         sound(0), average_count(0), last_sound(0)
     {
@@ -434,6 +435,7 @@ public:
     {
         int ch0, ch1, ch2;
         this->timer.Count(1, ch0, ch1, ch2);
+        this->outs = (ch0 ? 1 : 0) | (ch1 ? 2 : 0) | (ch2 ? 4 : 0);   // выходы счётчиков (журнал V06X_SPKLOG)
         this->last_sound = ch0 * ena_ch0 + ch1 * ena_ch1 + ch2 * ena_ch2;
         return this->last_sound;
     }
