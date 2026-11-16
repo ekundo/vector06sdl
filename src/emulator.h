@@ -92,7 +92,7 @@ public:
     void keydown(int scancode);
     void keyup(int scancode);
     void set_joysticks(int joy_0e, int joy_0f);
-    void set_volumes(float timer, float beeper, float ay, float covox, float master);
+    void set_volumes(float timer, float beeper, float ay, float pcm, float master);
     void enable_timer_channels(bool ech0, bool ech1, bool ech2);
     void enable_ay_channels(bool ech0, bool ech1, bool ech2);
     void export_pixel_bytes(uint8_t * dst);

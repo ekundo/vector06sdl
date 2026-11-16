@@ -664,7 +664,7 @@ func save_config():
 	cfg.set_value("sound", "volume_8253", sound_panel.get_volume(0))
 	cfg.set_value("sound", "volume_beep", sound_panel.get_volume(1))
 	cfg.set_value("sound", "volume_ay", sound_panel.get_volume(2))
-	cfg.set_value("sound", "volume_covox", sound_panel.get_volume(3))
+	cfg.set_value("sound", "volume_pcm", sound_panel.get_volume(3))
 	cfg.set_value("sound", "volume_db", sound_panel.get_volume(4))
 	
 	cfg.set_value("hdd", "file", hdd_path)
@@ -724,7 +724,7 @@ func load_config():
 		sound_panel.set_volume(0, cfg.get_value("sound", "volume_8253", 10))
 		sound_panel.set_volume(1, cfg.get_value("sound", "volume_beep", 10))
 		sound_panel.set_volume(2, cfg.get_value("sound", "volume_ay", 10))
-		sound_panel.set_volume(3, cfg.get_value("sound", "volume_covox", 10))
+		sound_panel.set_volume(3, cfg.get_value("sound", "volume_pcm", 10))
 		sound_panel.set_volume(4, cfg.get_value("sound", "volume_db", 0))
 		_on_SoundPanel_volumes_changed()
 

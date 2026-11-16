@@ -4,7 +4,7 @@ signal volumes_changed
 
 const TOOLTIP_NODE_PATH = "/root/main/NiceTooltip"
 
-onready var knobs = [$VBoxContainer/Knob8253, $VBoxContainer/KnobBeep, $VBoxContainer/KnobAY, $VBoxContainer/KnobCovox, $VBoxContainer/KnobMaster]
+onready var knobs = [$VBoxContainer/Knob8253, $VBoxContainer/KnobBeep, $VBoxContainer/KnobAY, $VBoxContainer/KnobPCM, $VBoxContainer/KnobMaster]
 
 func nice_tooltip():
 	var tt = get_tree().get_root().get_node(TOOLTIP_NODE_PATH)
@@ -32,7 +32,7 @@ func update_hint(index, value):
 		0: text = "ВИ53\n%3.1f" % value
 		1: text = "Бипер\n%3.1f" % value
 		2: text = "AY-3-8910\n%3.1f" % value
-		3: text = "Covox\n%3.1f" % value
+		3: text = "PCM\n%3.1f" % value
 		4: text = "Усиление\n%3.1fdB" % value
 	if text != "":
 		var pos = knobs[index].get_global_rect().position

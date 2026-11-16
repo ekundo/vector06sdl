@@ -71,13 +71,17 @@ void Emulator::set_joysticks(int joy_0e, int joy_0f)
     board.set_joysticks(joy_0e, joy_0f);
 }
 
-void Emulator::set_volumes(float timer, float beeper, float ay, float covox, 
+// Четвёртая ручка оболочки -- проигрыватель PCM ComboLite (вместо Covox, его
+// в оболочке нет): деление 10, как у других ручек, -- 0,05, полная шкала PCM
+// равна каналу AY (src/options.cpp)
+void Emulator::set_volumes(float timer, float beeper, float ay, float pcm,
         float master)
 {
     Options.volume.timer = timer;
     Options.volume.beeper = beeper;
     Options.volume.ay = ay;
-    Options.volume.covox = covox;
+    Options.volume.pcm = pcm * 0.5f;
+    Options.volume.covox = 0.f;
     Options.volume.global = master;
 }
 

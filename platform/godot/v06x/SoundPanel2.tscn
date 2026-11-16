@@ -64,7 +64,7 @@ center_led = true
 stops = [ 10 ]
 chan_led_visible = PoolByteArray( 1, 1, 1 )
 
-[node name="KnobCovox" parent="VBoxContainer" instance=ExtResource( 2 )]
+[node name="KnobPCM" parent="VBoxContainer" instance=ExtResource( 2 )]
 margin_top = 108.0
 margin_right = 80.0
 margin_bottom = 140.0
@@ -75,7 +75,7 @@ value = 10.0
 speed = 0.15
 rounded = true
 round_precision = 10
-caption = "Covox"
+caption = "PCM"
 center_led = true
 stops = [ 10 ]
 
