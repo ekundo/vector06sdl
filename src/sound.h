@@ -37,6 +37,18 @@ private:
     Resampler resampler;
     WavRecorder * rec;
 
+    // Разделительный конденсатор выхода, срез ~4 Гц на 48 кГц. Без него
+    // покоящиеся выходы ВИ53 (до 0,5 полной шкалы) стоят постоянной и
+    // съедают запас: с громкостью выше единицы (Master в Godot до +6 дБ)
+    // сумма упиралась в 1,0 и срезалась вместе с PCM и AY поверх неё.
+    float dc_x = 0.f, dc_y = 0.f;
+    float dc_block(float x)
+    {
+        dc_y = x - dc_x + 0.9995f * dc_y;
+        dc_x = x;
+        return dc_y;
+    }
+
 public:
     Soundnik(TimerWrapper & tw, AYWrapper & aw) : timerwrapper(tw),
         aywrapper(aw)

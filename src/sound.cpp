@@ -216,16 +216,14 @@ void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
             soundf += Options.volume.pcm * pcm_value;
         }
 
-        if (wavdump()) {                            // V06X_WAV: отладочная запись выхода, 48 кГц моно
+        bool dump = wavdump();                      // V06X_WAV: отладочная запись выхода, 48 кГц моно
+        if (dump || !Options.nosound) {
             float w = this->resampler.sample(soundf);
-            if (resampler.egg) { resampler.egg = false; wavdump_put(std::clamp(w * Options.volume.global, -1.f, 1.f)); }
-        }
-        else if (!Options.nosound) {
-            soundf = this->resampler.sample(soundf);
-
             if (resampler.egg) {
                 resampler.egg = false;
-                this->sample(std::clamp(soundf * Options.volume.global, -1.f,1.f));
+                w = std::clamp(dc_block(w) * Options.volume.global, -1.f, 1.f);
+                if (dump) wavdump_put(w);
+                else this->sample(w);
             }
         }
     }
