@@ -337,6 +337,9 @@ public:
                 break;
             case 0x14:
             case 0x15:
+                {   extern void (*g_pitrd_hook)(int port, int val);   // V06X_PITRD: и записи в AY
+                    if (g_pitrd_hook) g_pitrd_hook(port, w8);
+                }
                 this->ay.write(port & 1, w8);
                 break;
 
