@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 
 // Проигрыватель PCM ComboLite (combolite.h): включён -- шагать его отсчёты по
 // тактам 1,5 МГц, 44 092 раза в секунду времени «Вектора».
@@ -172,7 +173,21 @@ static void wavdump_put(float v)
         fseek(wav_f, 4, SEEK_SET); fwrite(&r, 4, 1, wav_f); fseek(wav_f, 40, SEEK_SET); fwrite(&d, 4, 1, wav_f); fseek(wav_f, pos, SEEK_SET); }
 }
 
-unsigned long long g_clk1m5 = 0;                // такты 1,5 МГц с запуска (метки времени отладочных журналов)
+// Уровень выхода как у платы ComboLite (hdl/audio.v): один источник на полной
+// шкале (PCM, канал ВИ53, PC0, канал AY) -- 1020 из 2047, то есть размах 1,0
+// из 2,0 (-6 дБ). При умолчаниях (PCM 0,05, общая 1,5) без множителя он давал
+// размах 0,15 (-22,5 дБ); 6,67 -- это +16,5 дБ. Баланс источников не меняется.
+static const float OUT_GAIN = 6.67f;
+
+// Мягкий потолок, как загиб суммы на плате: до 0,75 линейно, выше наклон 1/4.
+static float out_limit(float x)
+{
+    float a = std::fabs(x);
+    if (a > 0.75f) a = 0.75f + (a - 0.75f) * 0.25f;
+    return std::copysign(std::min(a, 1.f), x);
+}
+
+unsigned long long g_clk1m5 = 0;               // такты 1,5 МГц с запуска (метки времени отладочных журналов)
 
 void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
 {
@@ -221,7 +236,7 @@ void Soundnik::soundSteps(int nclk1m5, int tapeout, int covox, int tapein)
             float w = this->resampler.sample(soundf);
             if (resampler.egg) {
                 resampler.egg = false;
-                w = std::clamp(dc_block(w) * Options.volume.global, -1.f, 1.f);
+                w = out_limit(dc_block(w) * Options.volume.global * OUT_GAIN);
                 if (dump) wavdump_put(w);
                 else this->sample(w);
             }
