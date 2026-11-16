@@ -455,6 +455,25 @@ void Board::single_step(bool update_screen)
         extern unsigned long long g_clk1m5;
         static FILE * f = nullptr; static int st = -1; static unsigned long long next = 0;
         if (st < 0) { const char * p = getenv("V06X_PCSAMPLE"); st = p && *p && (f = fopen(p, "w")); }
+        {   // V06X_SPMIN=lo,hi: каждый новый минимум SP в [lo, hi) — кадр, строка, SP, PC (глубина стека прерывания под буфером)
+            static int st2 = -1; static FILE * f2 = nullptr; static int lo = 0, hi = 0, mn = 0x10000;
+            if (st2 < 0) { const char * p = getenv("V06X_SPMIN"); st2 = p && *p && sscanf(p, "%i,%i", &lo, &hi) == 2 && (f2 = fopen("spmin.txt", "w")); }
+            static unsigned long fr0 = getenv("V06X_SPFROM") ? strtoul(getenv("V06X_SPFROM"), nullptr, 0) : 0;
+            if (f2 && g_vframe >= fr0) { int sp = i8080cpu::i8080_regs_sp(); if (sp >= lo && sp < hi && sp < mn) { mn = sp; fprintf(f2, "%lu %d %04X %04X\n", g_vframe, filler.get_raster_line(), sp, i8080_pc()); fflush(f2); } }
+        }
+        {   // V06X_IRQDEPTH: глубина стека кадрового прерывания (вход по PC 0038h, конец — SP вернулся к входному): новые максимумы
+            static int st3 = -1; static FILE * f3 = nullptr; static int in = 0, esp = 0, mn = 0, best = 0, epc = 0x38;
+            if (st3 < 0) { const char * p = getenv("V06X_IRQDEPTH"); const char * q = getenv("V06X_IRQPC"); if (q) epc = strtol(q, nullptr, 0); st3 = p && *p && (f3 = fopen(p, "w")); }
+            static unsigned long fr3 = getenv("V06X_SPFROM") ? strtoul(getenv("V06X_SPFROM"), nullptr, 0) : 0;
+            if (f3 && g_vframe >= fr3) {
+                int pc = i8080_pc(), sp = i8080cpu::i8080_regs_sp();
+                if (!in && pc == epc) { in = 1; esp = sp + 2; mn = sp; }   // на входе уже лежит адрес возврата
+                else if (in) {
+                    if (sp < mn && sp > esp - 256) mn = sp;   // SP-трюки внутри (чтение стеком) — мимо
+                    if (sp >= esp) { in = 0; if (esp - mn > best) { best = esp - mn; fprintf(f3, "%lu глубина %d вход SP %04X\n", g_vframe, best, esp); fflush(f3); } }
+                }
+            }
+        }
         static unsigned long long from = getenv("V06X_PCFROM") ? strtoull(getenv("V06X_PCFROM"), nullptr, 0) * 1500 : 0;
         if (f && g_clk1m5 >= next && g_clk1m5 >= from) { static unsigned long long step = getenv("V06X_PCSTEP") ? strtoull(getenv("V06X_PCSTEP"), nullptr, 0) : 15000; next = g_clk1m5 + step; fprintf(f, "%.1f %lu %d %04X %d\n", g_clk1m5 / 1500.0, g_vframe, filler.get_raster_line(), i8080_pc(), this->inte ? 1 : 0); }
     }
