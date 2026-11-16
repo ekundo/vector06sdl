@@ -160,7 +160,7 @@ resizable = true
 mode_overrides_title = false
 mode = 3
 access = 2
-filters = PoolStringArray( "*.rom,*.r0m,*.vec,*.bin,*.fdd,*.wav" )
+filters = PoolStringArray( "*.rom,*.r0m,*.vec,*.bin,*.fdd,*.edd,*.hdd,*.img,*.wav" )
 __meta__ = {
 "_edit_use_anchors_": false
 }
