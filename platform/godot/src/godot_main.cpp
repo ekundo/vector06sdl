@@ -42,6 +42,63 @@ Debug debug(&memory);
 Board board(memory, io, filler, soundnik, tv, tape_player, debug);
 Emulator lator(board);
 
+/* Запись для разбора: последние REC_N кадров телевизора (RGB565) в кольце, журнал ввода с номером кадра с запуска.
+   F8 -- сброс в ~/Downloads/v06x-dump-ГГГГММДД-ЧЧММСС/: frames.bin (заголовок "V6XF", ширина, высота, кадров; кадр --
+   номер int32 и точки по 2 байта), input.log, state.bin (lator.save_state). F8 в эмулятор не идёт (F9 у оболочки -- ускорение). V06X_RECFRAMES --
+   длина кольца (по умолчанию 400, 0 -- выключено) */
+#include <vector>
+#include <string>
+#include <cstdio>
+#include <ctime>
+#include <sys/stat.h>
+static std::vector<uint16_t> rec_ring;
+static std::vector<int> rec_fno;
+static int rec_n = -1, rec_pos = 0, rec_cnt = 0;
+static std::vector<std::string> rec_log;
+static int rec_mx = -1, rec_my = -1, rec_mb = -1;
+static void rec_line(const char * fmt, int a, int b = 0, int c = 0, int d = 0)
+{
+    char buf[96]; snprintf(buf, sizeof(buf), fmt, board.get_frame_no(), a, b, c, d); rec_log.push_back(buf);
+}
+static void rec_frame(const uint8_t * rgba)
+{
+    if (rec_n < 0) { const char * e = getenv("V06X_RECFRAMES"); rec_n = e ? atoi(e) : 400; }
+    if (rec_n <= 0) return;
+    size_t np = (size_t)Options.screen_width * Options.screen_height;
+    if (rec_ring.size() != np * rec_n) { rec_ring.assign(np * rec_n, 0); rec_fno.assign(rec_n, -1); rec_pos = rec_cnt = 0; }
+    uint16_t * d = &rec_ring[np * rec_pos];
+    for (size_t i = 0; i < np; ++i, rgba += 4)
+        d[i] = (uint16_t)(((rgba[0] >> 3) << 11) | ((rgba[1] >> 2) << 5) | (rgba[2] >> 3));
+    rec_fno[rec_pos] = board.get_frame_no();
+    rec_pos = (rec_pos + 1) % rec_n; if (rec_cnt < rec_n) ++rec_cnt;
+}
+static void rec_dump()
+{
+    const char * home = getenv("HOME"); char dir[512]; time_t t = time(nullptr); struct tm tmv; localtime_r(&t, &tmv);
+    snprintf(dir, sizeof(dir), "%s/Downloads/v06x-dump-%04d%02d%02d-%02d%02d%02d", home ? home : ".",
+             tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+    mkdir(dir, 0755);
+    std::string d(dir);
+    if (FILE * f = fopen((d + "/frames.bin").c_str(), "wb")) {
+        int32_t hdr[4] = { 0x46583656, Options.screen_width, Options.screen_height, rec_cnt };
+        fwrite(hdr, sizeof(hdr), 1, f);
+        size_t np = (size_t)Options.screen_width * Options.screen_height;
+        for (int k = 0; k < rec_cnt; ++k) {
+            int slot = (rec_pos - rec_cnt + k + rec_n) % rec_n; int32_t fn = rec_fno[slot];
+            fwrite(&fn, 4, 1, f); fwrite(&rec_ring[np * slot], 2, np, f);
+        }
+        fclose(f);
+    }
+    if (FILE * f = fopen((d + "/input.log").c_str(), "w")) {
+        fprintf(f, "# кадр сброса %d, экран %dx%d, рамка %d\n", board.get_frame_no(), Options.screen_width, Options.screen_height, Options.border_width);
+        for (auto & l : rec_log) fprintf(f, "%s\n", l.c_str());
+        fclose(f);
+    }
+    std::vector<uint8_t> st; lator.save_state(st);
+    if (FILE * f = fopen((d + "/state.bin").c_str(), "wb")) { fwrite(st.data(), 1, st.size(), f); fclose(f); }
+    printf("v06x: запись сброшена в %s (%d кадров)\n", dir, rec_cnt); fflush(stdout);
+}
+
 Scriptnik* scriptnik = nullptr;
 void bootstrap_scriptnik();
 
@@ -187,6 +244,7 @@ godot_variant V06X_ExecuteFrame(godot_object* p_instance, void* p_method_data,
     uint8_t* wrptr = api->godot_pool_byte_array_write_access_ptr(wraccess);
 
     lator.export_pixel_bytes(wrptr);
+    rec_frame(wrptr);
 
     memory.cool_off_heatmap();
 
@@ -271,6 +329,10 @@ godot_variant V06X_SetMouse(godot_object* p_instance, void* p_method_data,
     io.mouse.host_buttons(buttons);
     if (wheel) io.mouse.host_wheel(wheel);
     bool inside = x512 >= 0 && x512 < 512 && row >= 0 && row < 256;
+    if (inside && (x512 != rec_mx || 255 - row != rec_my || buttons != rec_mb)) {
+        rec_mx = x512; rec_my = 255 - row; rec_mb = buttons; rec_line("%d m %d %d %d", x512, 255 - row, buttons);
+    } else if (buttons != rec_mb) { rec_mb = buttons; rec_line("%d b %d", buttons); }
+    if (wheel) rec_line("%d w %d", wheel);
     if (inside) io.mouse.host_move(x512, 255 - row);
 
     godot_variant ret;
@@ -333,6 +395,11 @@ godot_variant V06X_KeyDown(godot_object* p_instance, void* p_method_data,
   void* p_user_data, int p_num_args, godot_variant** p_args)
 {
     godot_int scancode = api->godot_variant_as_int(p_args[0]);
+    if (scancode == SDL_SCANCODE_F8) {
+        rec_dump();
+        godot_variant r; api->godot_variant_new_bool(&r, 1); return r;
+    }
+    rec_line("%d kd %d", (int)scancode);
     if (scancode == SDL_SCANCODE_LGUI) { cmd_down = true; cmd_alone = true; }
     else {
         if (cmd_down) cmd_alone = false;    /* сочетание с Cmd -- не РУС/ЛАТ */
@@ -351,6 +418,8 @@ godot_variant V06X_KeyUp(godot_object* p_instance, void* p_method_data,
   void* p_user_data, int p_num_args, godot_variant** p_args)
 {
     godot_int scancode = api->godot_variant_as_int(p_args[0]);
+    if (scancode == SDL_SCANCODE_F8) { godot_variant r; api->godot_variant_new_bool(&r, 1); return r; }
+    rec_line("%d ku %d", (int)scancode);
     if (scancode == SDL_SCANCODE_LGUI) {
         if (cmd_down && cmd_alone && window_focused()) {
             lator.keydown(SDL_SCANCODE_LGUI);
