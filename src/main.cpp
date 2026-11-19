@@ -274,6 +274,13 @@ int main(int argc, char ** argv)
         board.hooks.device_frame = []() { io.combo.frame(board.get_frame_no()); };
     }
 
+    // V06X_STATE: снимок состояния (save_state оболочки Godot, сброс записи F8: state_start.bin) -- прогон с него
+    if (const char * st = getenv("V06X_STATE")) {
+        std::ifstream f(st, std::ios::binary);
+        std::vector<uint8_t> v((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        printf("state %s: %zu bytes, %s\n", st, v.size(), (v.size() && board.deserialize(v)) ? "ok" : "FAILED");
+    }
+
     atexit(SDL_Quit);
 
     board.poll_debugger = [](void) {

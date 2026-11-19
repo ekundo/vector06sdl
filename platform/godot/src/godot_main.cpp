@@ -55,6 +55,7 @@ static std::vector<uint16_t> rec_ring;
 static std::vector<int> rec_fno;
 static int rec_n = -1, rec_pos = 0, rec_cnt = 0;
 static std::vector<std::string> rec_log;
+static std::vector<std::pair<int, std::vector<uint8_t>>> rec_snaps;
 static int rec_mx = -1, rec_my = -1, rec_mb = -1;
 static void rec_line(const char * fmt, int a, int b = 0, int c = 0, int d = 0)
 {
@@ -70,6 +71,12 @@ static void rec_frame(const uint8_t * rgba)
     for (size_t i = 0; i < np; ++i, rgba += 4)
         d[i] = (uint16_t)(((rgba[0] >> 3) << 11) | ((rgba[1] >> 2) << 5) | (rgba[2] >> 3));
     rec_fno[rec_pos] = board.get_frame_no();
+    // снимок состояния раз в 100 кадров (последние 6): сброс отдаёт самый ранний из окна кольца -- прогон с него
+    if (board.get_frame_no() % 100 == 0) {
+        rec_snaps.emplace_back(board.get_frame_no(), std::vector<uint8_t>());
+        lator.save_state(rec_snaps.back().second);
+        if (rec_snaps.size() > 6) rec_snaps.erase(rec_snaps.begin());
+    }
     rec_pos = (rec_pos + 1) % rec_n; if (rec_cnt < rec_n) ++rec_cnt;
 }
 static void rec_dump()
@@ -93,6 +100,12 @@ static void rec_dump()
         fprintf(f, "# кадр сброса %d, экран %dx%d, рамка %d\n", board.get_frame_no(), Options.screen_width, Options.screen_height, Options.border_width);
         for (auto & l : rec_log) fprintf(f, "%s\n", l.c_str());
         fclose(f);
+    }
+    int first = rec_cnt ? rec_fno[(rec_pos - rec_cnt + rec_n) % rec_n] : 0;
+    for (auto & sn : rec_snaps) if (sn.first >= first) {
+        if (FILE * f = fopen((d + "/state_start.bin").c_str(), "wb")) { fwrite(sn.second.data(), 1, sn.second.size(), f); fclose(f); }
+        if (FILE * f = fopen((d + "/state_start.txt").c_str(), "w")) { fprintf(f, "%d\n", sn.first); fclose(f); }
+        break;
     }
     std::vector<uint8_t> st; lator.save_state(st);
     if (FILE * f = fopen((d + "/state.bin").c_str(), "wb")) { fwrite(st.data(), 1, st.size(), f); fclose(f); }
