@@ -186,6 +186,7 @@ struct scriptnik_engine {
         chai.add(fun([this]() {
                     s.finalizing = true;
                     }), "finalize");
+        chai.add(fun([this](const std::string & path) { if (s.save_state) s.save_state(path); }), "save_state");
         //chai.add(type_conversion<std::any, std::string>([](const std::any &from)
         //            { return std::any_cast<std::string>(from); }));
         //chai.add(type_conversion<std::any, std::string>([](const std::any &from)

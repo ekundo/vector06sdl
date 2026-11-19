@@ -133,6 +133,12 @@ void bootstrap_scriptnik()
             io.mouse.host_buttons(b);
         };
 
+        scriptnik.save_state = [](const std::string & path) {
+            std::vector<uint8_t> v; board.serialize(v);
+            std::ofstream f(path, std::ios::binary); f.write((const char *)v.data(), v.size());
+            fprintf(stderr, "state saved %s %zu\n", path.c_str(), v.size());
+        };
+
         scriptnik.keyup = [](int scancode) {
             SDL_KeyboardEvent e;
             e.keysym.scancode = (SDL_Scancode)scancode;

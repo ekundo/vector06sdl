@@ -37,6 +37,7 @@ public:
     std::function<int(int,int)> read_memory;
     std::function<void(int,int,int)> write_memory;
     std::function<void()> finalize;
+    std::function<void(const std::string&)> save_state;   // снимок состояния в файл (для оболочки: user://v06x.savestate)
     std::function<void(const std::string&)> console_puts;
 
     std::function<void(const std::string&)> start_wav_recording;
