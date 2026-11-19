@@ -476,6 +476,7 @@ public:
         tmp.push_back(PA2);
         tmp.push_back(PB2);
         tmp.push_back(PC2);
+        timer.raw_save(tmp);        // ВИ53: без него игра после загрузки снимка ждёт перезарядки часов луча вечно
 
         SerializeChunk::insert_chunk(to, SerializeChunk::IO, tmp);
     }
@@ -493,6 +494,7 @@ public:
         PA2 = *it++;
         PB2 = *it++;
         PC2 = *it++;
+        if (size >= sizeof(this->palette) + 9 + timer.raw_size()) timer.raw_load(&*it);
 
         if (this->onmodechange) this->onmodechange((this->PB & 0x10) != 0);
         if (this->onborderchange) this->onborderchange(this->PB & 0x0f);

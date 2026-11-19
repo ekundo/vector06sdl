@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 #include <inttypes.h>
 
@@ -337,6 +338,20 @@ private:
 
 public:
     I8253() : control_word(0) {}
+
+    // снимок состояния (оболочка: save_state): счётчики -- простые данные, как есть
+    void raw_save(std::vector<uint8_t> & to) const
+    {
+        auto p = reinterpret_cast<const uint8_t *>(counters);
+        to.insert(to.end(), p, p + sizeof(counters));
+        to.push_back(control_word);
+    }
+    size_t raw_size() const { return sizeof(counters) + 1; }
+    void raw_load(const uint8_t * from)
+    {
+        std::copy(from, from + sizeof(counters), reinterpret_cast<uint8_t *>(counters));
+        control_word = from[sizeof(counters)];
+    }
 
     void write_cw(uint8_t w8) 
     {
